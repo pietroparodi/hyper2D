@@ -11,8 +11,6 @@ module pde
  
   integer, parameter :: Neq = 4 ! Number of equations
 
-  real(kind=8), parameter :: kB  = 1.38d-23 ! [J/K] Boltzmann constant
-
   ! Name of primitive variables, used ONLY for exporting the solution to VTK file
   ! NOTE: To initialize it here, all entries need to have the same length!!!
   !       I'm using three letters for simplicity.

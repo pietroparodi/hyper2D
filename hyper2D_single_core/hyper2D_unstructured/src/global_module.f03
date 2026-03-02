@@ -2,23 +2,42 @@ module global_module
 
   implicit none
   
-  ! Time integration
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! Constants !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-  real(kind=8), parameter :: t_end      = 1.0d-0 ! [s] total simulated time (from 0 to t_end)
-  real(kind=8), parameter :: CFL_target = 0.25
+   REAL(KIND=8) :: PI   = 3.1415926535897932d0           ! https://dlmf.nist.gov/3.12
+   REAL(KIND=8) :: EPS0 = 8.8541878128d-12               ! https://physics.nist.gov/cgi-bin/cuu/Value?ep0
+   REAL(KIND=8) :: MU0  = 1.25663706212d-6               ! https://physics.nist.gov/cgi-bin/cuu/Value?mu0
+   REAL(KIND=8) :: KB   = 1.380649d-23                   ! https://physics.nist.gov/cgi-bin/cuu/Value?k
+   REAL(KIND=8) :: QE   = 1.602176634d-19                ! https://physics.nist.gov/cgi-bin/cuu/Value?e
+   REAL(KIND=8) :: NA   = 6.02214076e23                  ! https://physics.nist.gov/cgi-bin/cuu/Value?na
+   REAL(KIND=8) :: ME   = 9.1093837139d-31               ! https://physics.nist.gov/cgi-bin/cuu/Value?me
+   REAL(KIND=8) :: HP   = 6.62607015d-34                 ! https://physics.nist.gov/cgi-bin/cuu/Value?h
 
-  !!!! TEST TEST TEST !!! ! Reconstruction order 
-  !!!! TEST TEST TEST !!! ! integer, parameter :: reconstr_order = 0 ! 0: no reconstruction -> first order in space
-  !!!! TEST TEST TEST !!! integer, parameter :: reconstr_order = 1 ! 1: linear reconstruction -> second order in space
+   LOGICAL                                   :: BOOL_DUMP_MOMENTS = .FALSE.
+   CHARACTER(LEN=256) :: GRID_FILENAME
+   LOGICAL :: BOOL_BINARY_OUTPUT = .TRUE.
+   CHARACTER*256                           :: FLOWFIELD_SAVE_PATH = 'dumps/'
+   ! Time integration
 
-  ! Free stream
+   real(kind=8), parameter :: t_end      = 1.0d-0 ! [s] total simulated time (from 0 to t_end)
+   real(kind=8), parameter :: CFL_target = 0.25
 
-  real(kind=8), parameter :: rho0 = 1.225   ! [kg/m3]
-  real(kind=8), parameter :: ux0  = 2000.0     ! [m/s]
-  real(kind=8), parameter :: uy0  = 0.0  ! [m/s]
-  real(kind=8), parameter :: T0   = 300.0   ! [K]
+   !!!! TEST TEST TEST !!! ! Reconstruction order 
+   !!!! TEST TEST TEST !!! ! integer, parameter :: reconstr_order = 0 ! 0: no reconstruction -> first order in space
+   !!!! TEST TEST TEST !!! integer, parameter :: reconstr_order = 1 ! 1: linear reconstruction -> second order in space
 
-  ! Utilities
-  real(kind=8) :: ws_over_sqrtA_maxabs
+   ! Free stream
 
+   real(kind=8), parameter :: rho0 = 1.225   ! [kg/m3]
+   real(kind=8), parameter :: ux0  = 600.0     ! [m/s]
+   real(kind=8), parameter :: uy0  = -500.0  ! [m/s]
+   real(kind=8), parameter :: T0   = 300.0   ! [K]
+
+   ! Utilities
+   real(kind=8) :: ws_over_sqrtA_maxabs
+
+
+   
 end module
