@@ -69,6 +69,7 @@ module grid
       INTEGER, DIMENSION(:), ALLOCATABLE        :: PERIODIC_RELATED_NODE
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: CELL_VOLUMES
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: CELL_AREAS
+      REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: CELL_CENTROIDS
    END TYPE UNSTRUCTURED_2D_GRID_DATA_STRUCTURE
 
    TYPE(UNSTRUCTURED_2D_GRID_DATA_STRUCTURE) :: U2D_GRID
@@ -401,6 +402,21 @@ module grid
             RAD = (A(2)+B(2)+C(2))/3.
             U2D_GRID%CELL_VOLUMES(I) = U2D_GRID%CELL_AREAS(I) * (ZMAX-ZMIN)*RAD
          END IF
+      END DO
+
+
+      WRITE(*,*) '==========================================='
+      WRITE(*,*) 'Computing cell centroids.'
+      WRITE(*,*) '==========================================='
+
+      ! Compute cell volumes
+      ALLOCATE(U2D_GRID%CELL_CENTROIDS(3, U2D_GRID%NUM_CELLS))
+      DO I = 1, U2D_GRID%NUM_CELLS
+         A = U2D_GRID%NODE_COORDS(:, U2D_GRID%CELL_NODES(1,I))
+         B = U2D_GRID%NODE_COORDS(:, U2D_GRID%CELL_NODES(2,I))
+         C = U2D_GRID%NODE_COORDS(:, U2D_GRID%CELL_NODES(3,I))
+
+         U2D_GRID%CELL_CENTROIDS(:, I) = (A+B+C)/3.
       END DO
 
 

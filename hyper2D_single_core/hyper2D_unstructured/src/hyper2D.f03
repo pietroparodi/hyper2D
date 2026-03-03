@@ -31,7 +31,25 @@ program hyper2D
    real(kind=8), dimension(:,:), allocatable :: U, U_new
 
    integer      :: Nt, t_ID ! Variables for time integration
-   real(kind=8) :: dt, t_now, CFL_now
+   real(kind=8) :: dt, t_now, CFL_now, dtmax
+
+
+   ! Hard-coded species for now.
+   NSPECIES = 2
+   ALLOCATE(SPECIES(NSPECIES))
+
+   SPECIES(1)%NAME = 'I2'
+   SPECIES(1)%MOLECULAR_MASS = 1.6e-27*128*2
+   SPECIES(1)%GAMMA = 1.4
+   SPECIES(1)%CP = SPECIES(1)%GAMMA/(SPECIES(1)%GAMMA-1)*1.380649d-23/SPECIES(1)%MOLECULAR_MASS
+   SPECIES(1)%KAPPA = 0.03
+
+   SPECIES(2)%NAME = 'I'
+   SPECIES(2)%MOLECULAR_MASS = 1.6e-27*128
+   SPECIES(2)%GAMMA = 1.66666666
+   SPECIES(2)%CP = SPECIES(1)%GAMMA/(SPECIES(1)%GAMMA-1)*1.380649d-23/SPECIES(1)%MOLECULAR_MASS
+   SPECIES(2)%KAPPA = 0.1
+
 
    write(*,*) "Reading grid file..."
    !call load_grid_from_file
@@ -43,7 +61,7 @@ program hyper2D
    !CALL DEF_BOUNDARY_CONDITION('Symmetry    symmetry')
 
    write(*,*) "Initializing solution..."
-   allocate(U(Neq,NCELLS), U_new(Neq,NCELLS))
+   allocate(U(NSPECIES*Neq,NCELLS), U_new(NSPECIES*Neq,NCELLS))
    call initialize_solution(U) ! See the pde.f03 module
    
    write(*,*) "Writing solution at time step", 0, "..."
@@ -57,6 +75,7 @@ program hyper2D
 
    t_now = 0.0d0   ! Init
    dt    = 1.0d-10  ! Very first time step
+   dtmax = 1.0d-2
    t_ID  = 0.0     ! Init
    
    do while( t_now .le. t_end)
@@ -80,7 +99,7 @@ program hyper2D
       ! ------ Estimate current Courant number and update time step -----
       CFL_now = ws_over_sqrtA_maxabs*dt
       write(*,'(A,EN15.5,A,F10.5,A,ES14.7,A)') 'Time', t_now, ' [s]. Current CFL: ', CFL_now, '. dt = ', dt, '[s]'
-      dt      = dt*CFL_target/CFL_now
+      dt      = MIN(dt*CFL_target/CFL_now, dtmax)
 
    end do
 

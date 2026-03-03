@@ -42,40 +42,38 @@ module tools
       real(kind=8), dimension(:,:), intent(in) :: U
 
       real(kind=8), dimension(:,:), allocatable :: prim ! Primitive variables
-      
+   
       integer      :: eqID
+      CHARACTER*256                      :: file_name
+      INTEGER                            :: I, J, IC
 
-      CHARACTER*256                      :: string, file_name
-      CHARACTER*7, DIMENSION(33)         :: MOMENT_STRING 
+      character(len=20), dimension(:), allocatable :: prim_names
 
-
-      INTEGER                            :: I
-
-      REAL(KIND=8) :: SPWT
+      ALLOCATE(prim_names(NSPECIES*Neq))
 
 
-      MOMENT_STRING = ['rho_   ', &
-                        'Ux_    ', 'Uy_    ', 'Uz_    ', &
-                        'Pxx_   ', 'Pxy_   ', 'Pxz_   ', 'Pyy_   ', 'Pyz_   ', 'Pzz_   ', &
-                        'qx_    ', 'qy_    ', 'qz_    ', &
-                        'Qxxx_  ', 'Qxxy_  ', 'Qxyy_  ', 'Qyyy_  ', 'Qyyz_  ', &
-                        'Qyzz_  ', 'Qzzz_  ', 'Qxxz_  ', 'Qxzz_  ', 'Qxyz_  ', &
-                        'Riijj_ ', 'Rxxjj_ ', 'Rxyjj_ ', 'Rxzjj_ ', 'Ryyjj_ ', 'Ryzjj_ ', 'Rzzjj_ ', &
-                        'Sxiijj_', 'Syiijj_', 'Sziijj_']
-
+      DO I = 1, NSPECIES
+         J = 4*(I-1)
+         prim_names(J+1) = 'rho_'//TRIM(SPECIES(I)%NAME)
+         prim_names(J+2) = 'ux_'//TRIM(SPECIES(I)%NAME)
+         prim_names(J+3) = 'uy_'//TRIM(SPECIES(I)%NAME)
+         prim_names(J+4) = 'T_'//TRIM(SPECIES(I)%NAME)
+      END DO
 
       ! ----- Compute primitive variables on the grid ------
 
-      allocate(prim(Neq,NCELLS))
+      allocate(prim(NSPECIES*Neq,NCELLS))
 
       prim = 0.0 ! Init
-      do i = 1, NCELLS
-         call compute_primitive_from_conserved(U(:,i), prim(:,i))
+      do IC = 1, NCELLS
+         DO I = 1, NSPECIES
+            call compute_primitive_from_conserved(U((I-1)*Neq+1:I*Neq+1,IC), prim((I-1)*Neq+1:I*Neq+1,IC), I)
+         END DO
       end do
 
       ! ------- Write VTK file -------
 
-      WRITE(file_name,'(A, A, I0, A)') TRIM(ADJUSTL(FLOWFIELD_SAVE_PATH)), 'dsmc_flowfield_', t_ID, '.vtk'
+      WRITE(file_name,'(A, A, I0, A)') TRIM(ADJUSTL(FLOWFIELD_SAVE_PATH)), 'fluid_flowfield_', t_ID, '.vtk'
 
       IF (BOOL_BINARY_OUTPUT) THEN
          OPEN(54321, FILE=file_name, ACCESS='STREAM', FORM='UNFORMATTED', STATUS='NEW', CONVERT='BIG_ENDIAN')
@@ -104,15 +102,12 @@ module tools
         
 
          WRITE(54321) 'CELL_DATA '//ITOA(NCELLS)//ACHAR(10)
-         IF (BOOL_DUMP_MOMENTS) THEN
-            WRITE(54321) 'FIELD FieldData '//ITOA( 4 )//ACHAR(10)
-         ELSE
-            WRITE(54321) 'FIELD FieldData '//ITOA( 4 )//ACHAR(10)
-         END IF
+
+         WRITE(54321) 'FIELD FieldData '//ITOA( NSPECIES*Neq )//ACHAR(10)
 
 
          ! Write per-cell value
-         DO eqID = 1, Neq
+         DO eqID = 1, NSPECIES*Neq
 
             WRITE(54321) prim_names(eqID)//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
             WRITE(54321) prim(eqID,:), ACHAR(10)
@@ -148,15 +143,12 @@ module tools
  
          
          WRITE(54321,'(A,I10)') 'CELL_DATA', NCELLS
-         IF (BOOL_DUMP_MOMENTS) THEN
-            WRITE(54321,'(A,I10)') 'FIELD FieldData', 4
-         ELSE
-            WRITE(54321,'(A,I10)') 'FIELD FieldData', 4
-         END IF
+         WRITE(54321,'(A,I10)') 'FIELD FieldData', NSPECIES*Neq
+
 
 
          ! Write per-cell value
-         DO eqID = 1, Neq
+         DO eqID = 1, NSPECIES*Neq
             
             WRITE(54321,'(A,I10,I10,A8)') prim_names(eqID), 1, NCELLS, 'integer'
             WRITE(54321) prim(eqID,:)
@@ -167,6 +159,7 @@ module tools
       
       END IF
 
+      DEALLOCATE(prim_names)
 
    END SUBROUTINE GRID_SAVE
 
