@@ -5,7 +5,7 @@
 CMPF  = gfortran -c
 LNK   = gfortran 
 
-OPTS = -O3
+OPTS = -g
 
 OBJS = global_module.o  tools.o  grid.o  pde.o  integration.o
 

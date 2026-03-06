@@ -166,7 +166,7 @@ module grid
       INTEGER :: NUM_BOUNDARY_NODES, NUM_BOUNDARY_ELEM
 
       ! Open input file for reading
-      OPEN(UNIT=in5,FILE=FILENAME, STATUS='old',IOSTAT=ios)
+      OPEN(UNIT=in5,FILE='testgrid.su2', STATUS='old',IOSTAT=ios)
 
       IF (ios .NE. 0) THEN
          CALL ERROR_ABORT('Attention, mesh file not found! ABORTING.')

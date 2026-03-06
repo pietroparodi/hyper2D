@@ -21,7 +21,7 @@ module global_module
    CHARACTER*256                           :: FLOWFIELD_SAVE_PATH = 'dumps/'
    ! Time integration
 
-   real(kind=8), parameter :: t_end      = 1.0d-0 ! [s] total simulated time (from 0 to t_end)
+   real(kind=8), parameter :: t_end      = 10.0d-0 ! [s] total simulated time (from 0 to t_end)
    real(kind=8), parameter :: CFL_target = 0.25
 
    
@@ -32,12 +32,11 @@ module global_module
    !!!! TEST TEST TEST !!! integer, parameter :: reconstr_order = 1 ! 1: linear reconstruction -> second order in space
 
    ! Free stream
-
-   real(kind=8), parameter :: rho0 = 1.225   ! [kg/m3]
-   real(kind=8), parameter :: ux0  = -20.0     ! [m/s]
-   real(kind=8), parameter :: uy0  = -20.0  ! [m/s]
+   real(kind=8), parameter :: rho0 = 1.4   ! [kg/m3]
+   real(kind=8), parameter :: ux0  = 0.5     ! [m/s]
+   real(kind=8), parameter :: uy0  = 0.0  ! [m/s]
    real(kind=8), parameter :: T0   = 300.0   ! [K]
-   real(kind=8), parameter :: Tw   = 500.0   ! [K]
+   real(kind=8), parameter :: Tw   = 310.0   ! [K]
 
    ! Utilities
    real(kind=8) :: ws_over_sqrtA_maxabs
@@ -54,9 +53,11 @@ module global_module
    TYPE SPECIES_DATA_STRUCTURE
       CHARACTER*10 :: NAME
       REAL(KIND=8) :: MOLECULAR_MASS
+      REAL(KIND=8) :: DIAM
       REAL(KIND=8) :: GAMMA
       REAL(KIND=8) :: CP
       REAL(KIND=8) :: KAPPA
+      REAL(KIND=8) :: MU
    END TYPE SPECIES_DATA_STRUCTURE
 
    TYPE(SPECIES_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: SPECIES

@@ -34,12 +34,16 @@ module pde
          P0   = n0*kB*T0 ! [Pa] gas pressure
 
          ! Initialize all cells 
+         ! U(J+1,:) = rho0     ! Density
+         ! U(J+2,:) = rho0*0 ! Momentum along x
+         ! U(J+3,:) = rho0*0 ! Momentum along y
+         ! U(J+4,:) = rho0*(0**2 + 0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
+
+         ! Initialize all cells 
          U(J+1,:) = rho0     ! Density
-         U(J+2,:) = rho0*0 ! Momentum along x
-         U(J+3,:) = rho0*0 ! Momentum along y
-         U(J+4,:) = rho0*(0**2 + 0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
-
-
+         U(J+2,:) = rho0*ux0 ! Momentum along x
+         U(J+3,:) = rho0*uy0 ! Momentum along y
+         U(J+4,:) = rho0*(ux0**2 + uy0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
 
 
 
@@ -69,7 +73,7 @@ module pde
          U_outlet(J+1) = rho0     ! Density
          U_outlet(J+2) = rho0*ux0 ! Momentum along x
          U_outlet(J+3) = rho0*uy0 ! Momentum along y
-         U_outlet(J+4) = rho0*(ux0**2 + uy0**2)/2.0 + 0.95*P0/(SPECIES(I)%GAMMA-1.0) ! total energy
+         U_outlet(J+4) = rho0*(ux0**2 + uy0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
       
       END DO
 
@@ -122,15 +126,48 @@ module pde
 
       call compute_flux_ws(U_norm, F_dot_n, nx, ny, ws_max, ws_min, SP_ID)
 
-      ! Compute heat conduction
-      F_dot_n(4) = F_dot_n(4) + SPECIES(SP_ID)%KAPPA*(T_L-Tw)/dLR
-
       ! Update global maximum wave speed (used for setting the time step)
       ws_max = MAX(abs(ws_max), abs(ws_min))
 
       ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, ws_max/sqrt(A_ele))
 
    end subroutine
+
+
+
+
+
+
+   subroutine compute_wall_flux_diffusive(U, gradU, nx, ny, F_dot_n, A_ele, dLR, Tw, SP_ID)
+
+      implicit none
+
+      real(kind=8), dimension(Neq), intent(in)  :: U
+      real(kind=8), dimension(2,Neq), intent(in)  :: gradU
+      real(kind=8), dimension(Neq), intent(out) :: F_dot_n
+      real(kind=8), intent(in) :: nx, ny, A_ele, dLR, Tw
+      INTEGER,                      intent(in)  :: SP_ID
+
+      real(kind=8) :: rho, ux, uy,  T_L
+      real(kind=8), dimension(Neq) :: prim
+
+
+      call compute_primitive_from_conserved(U, prim, SP_ID)
+
+
+      rho = prim(1)
+      ux =  prim(2)
+      uy =  prim(3)
+      T_L = prim(4)
+      
+      F_dot_n = 0.d0
+      ! Compute heat conduction
+      F_dot_n(4) = F_dot_n(4) + SPECIES(SP_ID)%KAPPA*(T_L-Tw)/dLR
+
+   end subroutine
+
+
+
 
    ! ============================================================
 
