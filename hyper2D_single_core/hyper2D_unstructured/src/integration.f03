@@ -21,7 +21,7 @@ module integration
       real(kind=8), intent(in) :: dt
       integer :: eleID, eqID, intID
       
-      real(kind=8), dimension(Neq) :: U_sym
+      real(kind=8), dimension(Neq) :: U_sym, U_wall, U_neigh
       real(kind=8), dimension(:), allocatable :: F_dot_n_hyper, F_dot_n_diff, S
       real(kind=8) :: nx, ny, Lint, Aele, dLR
       integer      :: neigh, FACE_PG, I, FIRST, LAST
@@ -73,53 +73,22 @@ module integration
                   C1 = U2D_GRID%CELL_CENTROIDS(:,eleID)
                   C2 = U2D_GRID%CELL_CENTROIDS(:,neigh)
                   dLR = NORM2(C2-C1)
-
-                  call compute_fluxes_AUSMplusup(U(FIRST:LAST,eleID), U(FIRST:LAST,neigh), &
-                  nx, ny, F_dot_n_hyper(FIRST:LAST), Aele, I)
-                  call compute_fluxes_diffusive(U(FIRST:LAST,eleID), U(FIRST:LAST,neigh), &
-                  gradUprim(:,FIRST:LAST,eleID), gradUprim(:,FIRST:LAST,neigh), &
-                  nx, ny, F_dot_n_diff(FIRST:LAST), Aele, dLR, I)
-
+                  U_neigh = U(FIRST:LAST,neigh)
                else
                   dLR = SQRT(Aele)
                   FACE_PG = U2D_GRID%CELL_EDGES_PG(intID,eleID)
                   if (GRID_BC(FACE_PG)%PARTICLE_BC == INLET) then ! ++++++++ INLET BOUNDARY +++++++++++++++++++
-
-                     call compute_fluxes_AUSMplusup(U(FIRST:LAST,eleID), U_inlet(FIRST:LAST), &
-                     nx, ny, F_dot_n_hyper(FIRST:LAST), Aele, I)
-                     call compute_fluxes_diffusive(U(FIRST:LAST,eleID), U_inlet(FIRST:LAST), &
-                     gradUprim(:,FIRST:LAST,eleID), gradUprim(:,FIRST:LAST,eleID), &
-                     nx, ny, F_dot_n_diff(FIRST:LAST), Aele, dLR, I)
-
+                     U_neigh = U_inlet(FIRST:LAST)
                   else if (GRID_BC(FACE_PG)%PARTICLE_BC == OUTLET) then ! ++++++++ OUTLET BOUNDARY +++++++++++++++++++
-
-                     call compute_fluxes_AUSMplusup(U(FIRST:LAST,eleID), U_outlet(FIRST:LAST), &
-                     nx, ny, F_dot_n_hyper(FIRST:LAST), Aele, I)
-                     call compute_fluxes_diffusive(U(FIRST:LAST,eleID), U_outlet(FIRST:LAST), &
-                     gradUprim(:,FIRST:LAST,eleID), gradUprim(:,FIRST:LAST,eleID), &
-                     nx, ny, F_dot_n_diff(FIRST:LAST), Aele, dLR, I)
-
+                     U_neigh = U_outlet(FIRST:LAST)
                   else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL BOUNDARY ++++++++++++++++++++
-
-                     call compute_wall_flux(U(FIRST:LAST,eleID), &
-                     nx, ny, F_dot_n_hyper(FIRST:LAST), Aele, dLR, Tw, I)
-                     ! call compute_wall_flux_diffusive(U(FIRST:LAST,eleID), &
-                     ! gradUprim(:,FIRST:LAST,eleID), &
-                     ! nx, ny, F_dot_n_diff(FIRST:LAST), Aele, dLR, Tw, I)
-                     call compute_fluxes_diffusive(U(FIRST:LAST,eleID), U(FIRST:LAST,eleID), &
-                     gradUprim(:,FIRST:LAST,eleID), gradUprim(:,FIRST:LAST,eleID), &
-                     nx, ny, F_dot_n_diff(FIRST:LAST), Aele, dLR, I)
-
+                     call compute_wall_state(U(FIRST:LAST,eleID), &
+                     nx, ny, U_wall, I)
+                     U_neigh = U_wall
                   else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
-
                      call compute_sym_state(U(FIRST:LAST,eleID), &
                      nx, ny, U_sym, I)
-                     call compute_fluxes_AUSMplusup(U(FIRST:LAST,eleID), U_sym, &
-                     nx, ny, F_dot_n_hyper(FIRST:LAST), Aele, I)
-                     call compute_fluxes_diffusive(U(FIRST:LAST,eleID), U_sym, &
-                     gradUprim(:,FIRST:LAST,eleID), gradUprim(:,FIRST:LAST,eleID), &
-                     nx, ny, F_dot_n_diff(FIRST:LAST), Aele, dLR, I)
-
+                     U_neigh = U_sym
                   else
                      print*, "ERROR! UNKNOWN BOUNDARY TYPE ", neigh, " for element ", eleID, &
                      " Check the mesh or the pre-processing."
@@ -128,10 +97,16 @@ module integration
                   end if
                end if
 
+               call compute_fluxes_HLL(U(FIRST:LAST,eleID), U_neigh, &
+               nx, ny, F_dot_n_hyper(FIRST:LAST), Aele, I)
+               call compute_fluxes_diffusive(U(FIRST:LAST,eleID), U_neigh, &
+               gradUprim(:,FIRST:LAST,eleID), gradUprim(:,FIRST:LAST,eleID), &
+               nx, ny, F_dot_n_diff(FIRST:LAST), Aele, dLR, I)
+
             END DO
             ! Update solution
-            U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_diff)*Lint/Aele
-            !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper)*Lint/Aele
+            !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_diff)*Lint/Aele
+            U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper)*Lint/Aele
 
             ! Check that the solution did not diverge
             do eqID = 1, NSPECIES*Neq
@@ -465,21 +440,7 @@ module integration
 
       F_dot_n = 0.d0
 
-
-      ! Compute heat diffusion
-      call compute_primitive_from_conserved(U_L, prim, SP_ID)
-      rho_L = prim(1)
-      ux_L   = prim(2)
-      uy_L   = prim(3)
-      T_L   = prim(4)
- 
-      call compute_primitive_from_conserved(U_R, prim, SP_ID)
-      ux_R   = prim(2)
-      uy_R   = prim(3)
-      T_R   = prim(4)
-
-      !F_dot_n(4) = F_dot_n(4) + SPECIES(SP_ID)%KAPPA*(T_L-T_R)/dLR
-      
+      rho_L = U_L(1)
 
       ! Update global maximum wave speed (used for setting the time step)
       ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, &
@@ -615,12 +576,14 @@ module integration
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: Uface
       REAL(KIND=8) :: Lint, nx, ny, Aele
       REAL(KIND=8), DIMENSION(Neq) :: prim
+      REAL(KIND=8), DIMENSION(:), allocatable :: U_adj
 
 
 
       ! Compute gradient in each cell from nodal values
       gradU = 0.d0
       ALLOCATE(Uface(NSPECIES*Neq))
+      ALLOCATE(U_adj(NSPECIES*Neq))
 
       DO I = 1, NCELLS
          DO J = 1, 3 ! The cell face
@@ -637,22 +600,39 @@ module integration
             else
                FACE_PG = U2D_GRID%CELL_EDGES_PG(J,I)
                if (GRID_BC(FACE_PG)%PARTICLE_BC == INLET) then ! ++++++++ INLET BOUNDARY +++++++++++++++++++
-                  Uface = 0.5*(U(:,I) + U_inlet)
-               else if (GRID_BC(FACE_PG)%PARTICLE_BC == OUTLET) then ! ++++++++ OUTLET BOUNDARY +++++++++++++++++++
-                  Uface = 0.5*(U(:,I) + U_outlet)
-               else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL BOUNDARY ++++++++++++++++++++
                   DO SP_ID = 1, NSPECIES
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq+1
-                     call compute_primitive_from_conserved(U(FIRST:LAST,I), prim, SP_ID)
-                     prim(2) = 0.d0
-                     prim(3) = 0.d0
-                     prim(4) = Tw
-                     call compute_conserved_from_primitive(prim, U_wall(FIRST:LAST), SP_ID)
+                     call compute_primitive_from_conserved(U_inlet(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
                   END DO
-                  Uface = 0.5*(U(:,I) + U_wall)
+                  Uface = 0.5*(U(:,I) + U_adj)
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == OUTLET) then ! ++++++++ OUTLET BOUNDARY +++++++++++++++++++
+                  DO SP_ID = 1, NSPECIES
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq+1
+                     call compute_primitive_from_conserved(U_outlet(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
+                  END DO
+                  Uface = 0.5*(U(:,I) + U_adj)
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL BOUNDARY ++++++++++++++++++++
+                  U_adj = U(:,I)
+                  DO SP_ID = 1, NSPECIES
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq+1
+                     U_adj(FIRST+1) = 0.d0
+                     U_adj(FIRST+2) = 0.d0
+                     U_adj(FIRST+3) = Tw
+                  END DO
+                  Uface = 0.5*(U(:,I) + U_adj)
+                  !Uface = U(:,I)
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
-                  Uface = U(:,I)
+                  U_adj = U(:,I)
+                  DO SP_ID = 1, NSPECIES
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq+1
+                     U_adj(FIRST+1) = U(FIRST+1,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*nx
+                     U_adj(FIRST+2) = U(FIRST+2,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*ny
+                  END DO
+                  Uface = 0.5*(U(:,I) + U_adj)
                else
                   print*, "ERROR! UNKNOWN BOUNDARY TYPE ", neigh, " for element ", I, &
                   " Check the mesh or the pre-processing."
@@ -669,6 +649,7 @@ module integration
       END DO
 
       DEALLOCATE(Uface)
+      DEALLOCATE(U_adj)
 
    end subroutine
 

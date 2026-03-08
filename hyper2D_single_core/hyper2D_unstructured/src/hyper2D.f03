@@ -31,7 +31,7 @@ program hyper2D
    real(kind=8), dimension(:,:), allocatable :: U, U_new
 
    integer      :: Nt, t_ID ! Variables for time integration
-   real(kind=8) :: dt, t_now, CFL_now, dtmax
+   real(kind=8) :: dt, t_now, CFL_now
 
 
    ! Hard-coded species for now.
@@ -52,14 +52,14 @@ program hyper2D
    SPECIES(2)%GAMMA = 1.66666666
    SPECIES(2)%CP = SPECIES(2)%GAMMA/(SPECIES(2)%GAMMA-1)*1.380649d-23/SPECIES(2)%MOLECULAR_MASS
    SPECIES(2)%KAPPA = 0.03
-   SPECIES(2)%MU = 18.0d-6
+   SPECIES(2)%MU = 18.0d-2
 
    write(*,*) "Reading grid file..."
    !call load_grid_from_file
    CALL READ_2D_UNSTRUCTURED_GRID_SU2('testgrid.su2')
 
    CALL DEF_BOUNDARY_CONDITION('Inlet    inlet')
-   CALL DEF_BOUNDARY_CONDITION('Sides    inlet')
+   CALL DEF_BOUNDARY_CONDITION('Sides    symmetry')
    CALL DEF_BOUNDARY_CONDITION('Outlet    outlet')
    CALL DEF_BOUNDARY_CONDITION('Wall    wall')
    !CALL DEF_BOUNDARY_CONDITION('Symmetry    symmetry')
@@ -79,7 +79,6 @@ program hyper2D
 
    t_now = 0.0d0   ! Init
    dt    = 1.0d-10  ! Very first time step
-   dtmax = 1.0d-2
    t_ID  = 0.0     ! Init
    
    do while( t_now .le. t_end)

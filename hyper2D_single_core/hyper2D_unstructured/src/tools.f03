@@ -3,7 +3,6 @@ module tools
    use global_module
    use grid
    use pde
-   use integration
 
    implicit none
 
@@ -50,9 +49,7 @@ module tools
 
       character(len=20), dimension(:), allocatable :: prim_names
 
-      real(kind=8), dimension(:,:,:), allocatable :: gradprim ! Primitive variables
-
-      ALLOCATE(prim_names(3*NSPECIES*Neq))
+      ALLOCATE(prim_names(NSPECIES*Neq))
 
 
       DO I = 1, NSPECIES
@@ -61,22 +58,6 @@ module tools
          prim_names(J+2) = 'ux_'//TRIM(SPECIES(I)%NAME)
          prim_names(J+3) = 'uy_'//TRIM(SPECIES(I)%NAME)
          prim_names(J+4) = 'T_'//TRIM(SPECIES(I)%NAME)
-      END DO
-
-      DO I = 1, NSPECIES
-         J = 4*(I-1) + NSPECIES*Neq
-         prim_names(J+1) = 'drhodx_'//TRIM(SPECIES(I)%NAME)
-         prim_names(J+2) = 'duxdx_'//TRIM(SPECIES(I)%NAME)
-         prim_names(J+3) = 'duydx_'//TRIM(SPECIES(I)%NAME)
-         prim_names(J+4) = 'dTdx_'//TRIM(SPECIES(I)%NAME)
-      END DO
-
-      DO I = 1, NSPECIES
-         J = 4*(I-1) + 2*NSPECIES*Neq
-         prim_names(J+1) = 'drhody_'//TRIM(SPECIES(I)%NAME)
-         prim_names(J+2) = 'duxdy_'//TRIM(SPECIES(I)%NAME)
-         prim_names(J+3) = 'duydy_'//TRIM(SPECIES(I)%NAME)
-         prim_names(J+4) = 'dTdy_'//TRIM(SPECIES(I)%NAME)
       END DO
 
       ! ----- Compute primitive variables on the grid ------
@@ -89,9 +70,6 @@ module tools
             call compute_primitive_from_conserved(U((I-1)*Neq+1:I*Neq+1,IC), prim((I-1)*Neq+1:I*Neq+1,IC), I)
          END DO
       end do
-
-      allocate(gradprim(2,NSPECIES*Neq,NCELLS))
-      call compute_cell_centered_gradients_green_gauss(prim, gradprim)
 
       ! ------- Write VTK file -------
 
@@ -125,7 +103,7 @@ module tools
 
          WRITE(54321) 'CELL_DATA '//ITOA(NCELLS)//ACHAR(10)
 
-         WRITE(54321) 'FIELD FieldData '//ITOA( 3*NSPECIES*Neq )//ACHAR(10)
+         WRITE(54321) 'FIELD FieldData '//ITOA( NSPECIES*Neq )//ACHAR(10)
 
 
          ! Write per-cell value
@@ -134,17 +112,6 @@ module tools
             WRITE(54321) prim_names(eqID)//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
             WRITE(54321) prim(eqID,:), ACHAR(10)
 
-         END DO
-
-         ! Write gradients
-         DO eqID = 1, NSPECIES*Neq
-            WRITE(54321) prim_names(eqID+NSPECIES*Neq)//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-            WRITE(54321) gradprim(1,eqID,:), ACHAR(10)
-         END DO
-
-         DO eqID = 1, NSPECIES*Neq
-            WRITE(54321) prim_names(eqID+2*NSPECIES*Neq)//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-            WRITE(54321) gradprim(2,eqID,:), ACHAR(10)
          END DO
 
          CLOSE(54321)

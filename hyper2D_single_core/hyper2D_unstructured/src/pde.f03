@@ -6,7 +6,7 @@ module pde
    implicit none
 
    ! Supported boundary conditions
-   real(kind=8), dimension(:), ALLOCATABLE :: U_inlet, U_outlet, U_wall, U_sym
+   real(kind=8), dimension(:), ALLOCATABLE :: U_inlet, U_outlet
 
    contains
 
@@ -23,8 +23,6 @@ module pde
 
       ALLOCATE(U_inlet(NSPECIES*Neq))
       ALLOCATE(U_outlet(NSPECIES*Neq))
-      ALLOCATE(U_wall(NSPECIES*Neq))
-      ALLOCATE(U_sym(NSPECIES*Neq))
 
 
       DO I = 1, NSPECIES
@@ -41,9 +39,9 @@ module pde
 
          ! Initialize all cells 
          U(J+1,:) = rho0     ! Density
-         U(J+2,:) = rho0*ux0 ! Momentum along x
-         U(J+3,:) = rho0*uy0 ! Momentum along y
-         U(J+4,:) = rho0*(ux0**2 + uy0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
+         U(J+2,:) = rho0*0 ! Momentum along x
+         U(J+3,:) = rho0*0 ! Momentum along y
+         U(J+4,:) = rho0*(0**2 + 0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
 
 
 
@@ -171,6 +169,29 @@ module pde
 
    ! ============================================================
 
+   subroutine compute_wall_state(U, nx, ny, U_sym, SP_ID)
+
+      implicit none
+
+      real(kind=8), dimension(Neq), intent(in)  :: U
+      real(kind=8), dimension(Neq), intent(out) :: U_sym
+      real(kind=8), intent(in) :: nx, ny
+      INTEGER,                      intent(in)  :: SP_ID
+
+      real(kind=8), dimension(Neq) :: prim
+
+      call compute_primitive_from_conserved(U, prim, SP_ID)
+
+      ! Compose new state
+      prim(2) = 0.d0
+      prim(3) = 0.d0
+
+      call compute_conserved_from_primitive(prim, U_sym, SP_ID)
+
+   end subroutine 
+
+   ! ============================================================
+
    subroutine compute_sym_state(U, nx, ny, U_sym, SP_ID)
 
       implicit none
@@ -182,7 +203,7 @@ module pde
 
       real(kind=8), dimension(Neq) :: prim
 
-      real(kind=8) :: ux, uy, ux_norm, uy_norm
+      real(kind=8) :: ux, uy, u_norm
       INTEGER :: I, J
 
       call compute_primitive_from_conserved(U, prim, SP_ID)
@@ -195,8 +216,9 @@ module pde
       ! normal component two times!
       !! ERROR !! ux = ux - 2.0*ux*nx
       !! ERROR !! uy = uy - 2.0*uy*ny
-      ux = ux - 2.0*(ux*nx + uy*ny)*nx
-      uy = uy - 2.0*(ux*nx + uy*ny)*ny
+      u_norm = ux*nx + uy*ny
+      ux = ux - 2.0*u_norm*nx
+      uy = uy - 2.0*u_norm*ny
 
       ! Compose new state
       prim(2) = ux
