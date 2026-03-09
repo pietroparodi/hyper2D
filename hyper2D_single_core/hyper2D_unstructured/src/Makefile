@@ -2,7 +2,7 @@
 #                         MAKEFILE                         #
 ############################################################
 
-CMPF  = gfortran -c
+CMPF  = gfortran -c -Wall -Wextra
 LNK   = gfortran 
 
 OPTS = -O3
