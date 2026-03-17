@@ -21,8 +21,8 @@ module global_module
    CHARACTER*256                           :: FLOWFIELD_SAVE_PATH = 'dumps/'
    ! Time integration
 
-   real(kind=8), parameter :: t_end      = 10.0d-0 ! [s] total simulated time (from 0 to t_end)
-   real(kind=8), parameter :: CFL_target = 0.25
+   real(kind=8), parameter :: t_end      = 50.0d-0 ! [s] total simulated time (from 0 to t_end)
+   real(kind=8), parameter :: CFL_target = 0.1
    real(kind=8), parameter :: dtmax      = 1.d-2
 
 
@@ -34,8 +34,8 @@ module global_module
    !!!! TEST TEST TEST !!! integer, parameter :: reconstr_order = 1 ! 1: linear reconstruction -> second order in space
 
    ! Free stream
-   real(kind=8), parameter :: rho0 = 1.4   ! [kg/m3]
-   real(kind=8), parameter :: ux0  = 50.0     ! [m/s]
+   real(kind=8), parameter :: rho0 = 254.0*1.66e-27 * 4.0/(1.380649d-23*300.0)   ! [kg/m3]
+   real(kind=8), parameter :: ux0  = 0.0    ! [m/s]
    real(kind=8), parameter :: uy0  = 0.0  ! [m/s]
    real(kind=8), parameter :: T0   = 300.0   ! [K]
    real(kind=8), parameter :: Tw   = 300.0   ! [K]
@@ -65,6 +65,23 @@ module global_module
    TYPE(SPECIES_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: SPECIES
 
 
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   !!!!!!!!! Wall reactions !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   
+   CHARACTER(LEN=256) :: WALL_REACTIONS_FILENAME
+   INTEGER :: N_WALL_REACTIONS = 0
+   
+   TYPE WALL_REACTIONS_DATA_STRUCTURE
+      INTEGER :: R_SP_ID
+      INTEGER :: P1_SP_ID
+      INTEGER :: P2_SP_ID
+      REAL(KIND=8) :: PROB
+      INTEGER :: N_PROD
+   END TYPE WALL_REACTIONS_DATA_STRUCTURE
+
+   TYPE(WALL_REACTIONS_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: WALL_REACTIONS
 
 
 end module

@@ -39,9 +39,9 @@ module pde
 
          ! Initialize all cells 
          U(J+1,:) = rho0     ! Density
-         U(J+2,:) = rho0*0 ! Momentum along x
-         U(J+3,:) = rho0*0 ! Momentum along y
-         U(J+4,:) = rho0*(0**2 + 0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
+         U(J+2,:) = rho0*ux0 ! Momentum along x
+         U(J+3,:) = rho0*uy0 ! Momentum along y
+         U(J+4,:) = rho0*(ux0**2 + uy0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
 
 
 
@@ -81,7 +81,11 @@ module pde
    end subroutine 
 
    
+
+
+
    subroutine compute_wall_flux(U, nx, ny, F_dot_n, A_ele, dLR, Tw, SP_ID)
+   !Not used
 
       implicit none
 
@@ -137,7 +141,8 @@ module pde
 
 
    subroutine compute_wall_flux_diffusive(U, gradU, nx, ny, F_dot_n, A_ele, dLR, Tw, SP_ID)
-
+   !Not used
+      
       implicit none
 
       real(kind=8), dimension(Neq), intent(in)  :: U

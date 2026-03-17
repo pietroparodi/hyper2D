@@ -22,8 +22,9 @@ module integration
       integer :: eleID, eqID, intID
       
       real(kind=8), dimension(Neq) :: U_sym, U_wall, U_neigh
-      real(kind=8), dimension(:), allocatable :: F_dot_n_hyper, F_dot_n_diff, S
-      real(kind=8) :: nx, ny, Lint, Aele, dLR
+      real(kind=8), dimension(2,Neq) :: gradUprim_neigh
+      real(kind=8), dimension(:), allocatable :: F_dot_n_hyper, F_dot_n_diff, F_dot_n_wall, S
+      real(kind=8) :: nx, ny, Aface, Acell, Vcell, dLR
       integer      :: neigh, FACE_PG, I, FIRST, LAST
       real(kind=8), dimension(3) :: C1, C2
 
@@ -32,6 +33,8 @@ module integration
 
       ALLOCATE(F_dot_n_hyper(NSPECIES*Neq))
       ALLOCATE(F_dot_n_diff(NSPECIES*Neq))
+
+      ALLOCATE(F_dot_n_wall(NSPECIES*Neq))
       ALLOCATE(S(NSPECIES*Neq))
       ALLOCATE(Uprim(NSPECIES*Neq,NCELLS))
       ALLOCATE(gradUprim(2,NSPECIES*Neq,NCELLS))
@@ -48,7 +51,8 @@ module integration
 
       do eleID = 1, NCELLS
 
-         Aele = U2D_GRID%CELL_AREAS(eleID)
+         Acell = U2D_GRID%CELL_AREAS(eleID)
+         Vcell = U2D_GRID%CELL_VOLUMES(eleID)
          U_new(:,eleID) = U(:,eleID) ! Init
 
          do intID = 1, 3 ! Only quad element supported
@@ -57,7 +61,7 @@ module integration
             F_dot_n_diff = 0.0 ! Init
 
             ! Extract data
-            Lint = U2D_GRID%CELL_EDGES_LEN(intID,eleID)
+            Aface = U2D_GRID%CELL_FACES_AREA(intID,eleID)
             nx = U2D_GRID%EDGE_NORMAL(1,intID,eleID)
             ny = U2D_GRID%EDGE_NORMAL(2,intID,eleID)
 
@@ -74,21 +78,26 @@ module integration
                   C2 = U2D_GRID%CELL_CENTROIDS(:,neigh)
                   dLR = NORM2(C2-C1)
                   U_neigh = U(FIRST:LAST,neigh)
+                  gradUprim_neigh = gradUprim(:,FIRST:LAST,neigh)
                else
-                  dLR = SQRT(Aele)
+                  dLR = SQRT(Acell)
                   FACE_PG = U2D_GRID%CELL_EDGES_PG(intID,eleID)
                   if (GRID_BC(FACE_PG)%PARTICLE_BC == INLET) then ! ++++++++ INLET BOUNDARY +++++++++++++++++++
                      U_neigh = U_inlet(FIRST:LAST)
+                     gradUprim_neigh = gradUprim(:,FIRST:LAST,eleID)
                   else if (GRID_BC(FACE_PG)%PARTICLE_BC == OUTLET) then ! ++++++++ OUTLET BOUNDARY +++++++++++++++++++
                      U_neigh = U_outlet(FIRST:LAST)
+                     gradUprim_neigh = gradUprim(:,FIRST:LAST,eleID)
                   else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL BOUNDARY ++++++++++++++++++++
                      call compute_wall_state(U(FIRST:LAST,eleID), &
                      nx, ny, U_wall, I)
                      U_neigh = U_wall
+                     gradUprim_neigh = gradUprim(:,FIRST:LAST,eleID)
                   else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
                      call compute_sym_state(U(FIRST:LAST,eleID), &
                      nx, ny, U_sym, I)
                      U_neigh = U_sym
+                     gradUprim_neigh = gradUprim(:,FIRST:LAST,eleID)
                   else
                      print*, "ERROR! UNKNOWN BOUNDARY TYPE ", neigh, " for element ", eleID, &
                      " Check the mesh or the pre-processing."
@@ -98,15 +107,31 @@ module integration
                end if
 
                call compute_fluxes_AUSMplusup(U(FIRST:LAST,eleID), U_neigh, &
-               nx, ny, F_dot_n_hyper(FIRST:LAST), Aele, I)
+               nx, ny, F_dot_n_hyper(FIRST:LAST), Acell, I)
                call compute_fluxes_diffusive(U(FIRST:LAST,eleID), U_neigh, &
-               gradUprim(:,FIRST:LAST,eleID), gradUprim(:,FIRST:LAST,eleID), &
-               nx, ny, F_dot_n_diff(FIRST:LAST), Aele, dLR, I)
+               gradUprim(:,FIRST:LAST,eleID), gradUprim_neigh, &
+               nx, ny, F_dot_n_diff(FIRST:LAST), Acell, dLR, I)
 
             END DO
+
+
+            F_dot_n_wall = 0.d0
+            IF (neigh == -1) THEN ! +++++++++ BOUNDARY CELL
+               dLR = SQRT(Acell)
+               FACE_PG = U2D_GRID%CELL_EDGES_PG(intID,eleID)
+               IF (GRID_BC(FACE_PG)%REACT) THEN
+                  CALL compute_wall_fluxes(U(:,eleID), nx, ny, F_dot_n_wall)
+               END IF
+            END IF
+
+
+
             ! Update solution
-            !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_diff)*Lint/Aele
-            U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper)*Lint/Aele
+            !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_diff)*Aface/Vcell
+            U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_diff + F_dot_n_wall)*Aface/Vcell
+            !WRITE(*,*) F_dot_n_diff
+            !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_wall)*Aface/Vcell
+            !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper)*Aface/Vcell
 
             ! Check that the solution did not diverge
             do eqID = 1, NSPECIES*Neq
@@ -217,6 +242,72 @@ module integration
    end subroutine
 
 
+   SUBROUTINE compute_wall_fluxes(U, nx, ny, F_dot_n_wall)
+
+      implicit none
+
+      real(kind=8), dimension(:),   intent(in) :: U
+      real(kind=8),                 intent(in) :: nx, ny
+      real(kind=8), dimension(:), intent(out)  :: F_dot_n_wall
+
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: Ndotout, Ndotin
+      REAL(KIND=8), DIMENSION(Neq) :: prim
+      INTEGER :: JR, I, FIRST, LAST, P1_SP_ID, R_SP_ID
+      REAL(KIND=8) :: M, T, rho, ux, uy, udotn, uparsq, Pflux
+
+      ALLOCATE(Ndotout(NSPECIES))
+      ALLOCATE(Ndotin(NSPECIES))
+      
+      ! Compute exiting particle flux
+      DO I = 1, NSPECIES
+         FIRST = (I-1)*Neq+1
+         LAST = I*Neq+1
+
+         CALL compute_primitive_from_conserved(U(FIRST:LAST), prim, I)
+         rho = prim(1)
+         ux = prim(2)
+         uy = prim(3)
+         T = prim(4)
+         M = SPECIES(I)%MOLECULAR_MASS
+         Ndotout(I) = rho/M*SQRT(KB*T/(2.*PI*M))
+      END DO
+
+      ! Compute entering particle flux
+      DO JR = 1, N_WALL_REACTIONS
+         IF (WALL_REACTIONS(JR)%N_PROD == 1) THEN
+            P1_SP_ID = WALL_REACTIONS(JR)%P1_SP_ID
+            R_SP_ID = WALL_REACTIONS(JR)%R_SP_ID
+            Ndotin(P1_SP_ID) = Ndotin(P1_SP_ID) + WALL_REACTIONS(JR)%PROB * Ndotout(R_SP_ID)
+         END IF
+      END DO
+
+      ! Compute mass, momentum, and energy flux vector
+      DO I = 1, NSPECIES
+         FIRST = (I-1)*Neq+1
+         LAST = I*Neq+1
+         CALL compute_primitive_from_conserved(U(FIRST:LAST), prim, I)
+         ux = prim(2)
+         uy = prim(3)
+         T = prim(4)
+         M = SPECIES(I)%MOLECULAR_MASS
+
+         ! Mass
+         F_dot_n_wall(FIRST) = M * (Ndotout(I) - Ndotin(I))
+
+         ! Momentum
+         Pflux = Ndotout(I)*0.5*SQRT(2.*M*KB*T) - Ndotin(I)*0.5*SQRT(2.*M*KB*Tw)
+         F_dot_n_wall(FIRST+1) = nx*Pflux
+         F_dot_n_wall(FIRST+2) = ny*Pflux
+
+         ! Energy
+         udotn = ux*nx + uy*ny
+         uparsq = (ux - udotn*nx)**2 + (uy - udotn*ny)**2
+         F_dot_n_wall(FIRST+3) = Ndotout(I)*(0.5*M*Uparsq + 2.*KB*T) - Ndotin(I)*(2.*KB*Tw)
+
+      END DO
+
+   END SUBROUTINE
+
    ! ======================================================================== 
 
    subroutine compute_fluxes_HLL(U_L, U_R, nx, ny, F_dot_n, A_ele, SP_ID)
@@ -265,325 +356,6 @@ module integration
    end subroutine
 
 
-
-
-
-
-
-
-
-
-
-! Functions from https://github.com/smillerc/cato
-
-
-   pure function split_mach_deg_1(M, plus_or_minus) result(M_split)
-   !< Implementation of the 1st order polynomial split Mach function M±(1). See Eq. 18 in Ref [1]
-   real(KIND=8), intent(in) :: M         !< Mach number
-   character(len=1), intent(in) :: plus_or_minus !< which split? '+' or '-'
-   real(KIND=8) :: M_split !< Split Mach number
-
-   if(plus_or_minus == '+') then
-     M_split = 0.5 * (M + abs(M)) ! M+(1)
-   else
-     M_split = 0.5 * (M - abs(M)) ! M-(1)
-   endif
- endfunction split_mach_deg_1
-
- pure function split_mach_deg_2(M, plus_or_minus) result(M_split)
-   !< Implementation of the 2nd order polynomial split Mach function  M±(2). See Eq. 19 in Ref [1]
-   real(KIND=8), intent(in) :: M                     !< Mach number
-   character(len=1), intent(in) :: plus_or_minus !< which split? '+' or '-'
-   real(KIND=8) :: M_split                           !< Split Mach number, M±(2)
-
-   if(plus_or_minus == '+') then
-     M_split = 0.25 * (M + 1.0)**2  ! M+(2)
-   else
-     M_split = -0.25 * (M - 1.0)**2 ! M-(2)
-   endif
-
- endfunction split_mach_deg_2
-
-   pure function split_mach_deg_4_old(M, plus_or_minus, beta) result(M_split)
-   !< Implementation of the 4th order polynomial split Mach function M±(4).
-   !< See Eq. 20 in Ref [1]
-
-   real(KIND=8), intent(in) :: M         !< Mach number
-   real(KIND=8), intent(in) :: beta      !< Mach number
-   character(len=1), intent(in) :: plus_or_minus !< which split? '+' or '-'
-   real(KIND=8) :: M_split !< Split Mach number
-
-   ! Locals
-   real(KIND=8) :: M_2_plus  !< 2nd order split Mach polynomial M+(2)
-   real(KIND=8) :: M_2_minus !< 2nd order split Mach polynomial M-(2)
-
-   M_2_plus = split_mach_deg_2(M, '+')  ! M+(2)
-   M_2_minus = split_mach_deg_2(M, '-') ! M-(2)
-
-   if(plus_or_minus == '+') then
-     if(abs(M) >= 1.0) then
-       M_split = split_mach_deg_1(M, '+') ! M+(1)
-     else
-       ! M+(4)
-       M_split = M_2_plus * (1.0 - 16.0 * beta * M_2_minus)
-     endif
-   else ! '-'
-     if(abs(M) >= 1.0) then
-       M_split = split_mach_deg_1(M, '-')
-     else
-       ! M-(4)
-       M_split = M_2_minus * (1.0 + 16.0 * beta * M_2_plus)
-     endif
-   endif
- endfunction split_mach_deg_4_old
-
-
- pure function split_mach_deg_4(M, plus_or_minus, beta) result(M_split)
-   !< Implementation of the 4th order polynomial split Mach function M±(4).
-   !< See Eq. 20 in Ref [1]
-
-   real(KIND=8), intent(in) :: M         !< Mach number
-   real(KIND=8), intent(in) :: beta      !< Mach number
-   character(len=1), intent(in) :: plus_or_minus !< which split? '+' or '-'
-   real(KIND=8) :: M_split !< Split Mach number
-
-   if(plus_or_minus == '+') then
-     if(abs(M) >= 1.0) then
-       M_split = 0.5*(1+SIGN(1.d0,M))
-     else
-       M_split = 0.5*(M+1.)**2 + beta*(M*M-1.)**2
-     endif
-   else ! '-'
-     if(abs(M) >= 1.0) then
-      M_split = 0.5*(1-SIGN(1.d0,M))
-     else
-       M_split = -0.5*(M-1.)**2 - beta*(M*M-1.)**2
-     endif
-   endif
- endfunction split_mach_deg_4
-
- pure function split_pressure_deg_5_old(M, plus_or_minus, alpha) result(P_split)
-   !< Implementation of the 5th order polynomial split pressure function P±(5).
-   !< See Eq. 24 in Ref [1]
-
-   real(KIND=8), intent(in) :: M                     !< Mach number
-   real(KIND=8), intent(in) :: alpha
-   character(len=1), intent(in) :: plus_or_minus !< Which split? '+' or '-'
-   real(KIND=8) :: P_split                           !< Split pressure factor
-
-   ! Locals
-   real(KIND=8) :: M_2_plus  !< 2nd order split Mach polynomial M+(2)
-   real(KIND=8) :: M_2_minus !< 2nd order split Mach polynomial M-(2)
-
-   M_2_plus = split_mach_deg_2(M, '+')  ! M+(2)
-   M_2_minus = split_mach_deg_2(M, '-') ! M-(2)
-
-   if(plus_or_minus == '+') then
-     ! P+(5)
-     if(abs(M) >= 1.0) then
-       P_split = split_mach_deg_1(M, '+') / M
-     else
-       P_split = M_2_plus * ((2.0 - M) - 16.0 * alpha * M * M_2_minus)
-     endif
-   else
-     ! P-(5)
-     if(abs(M) >= 1.0) then
-       P_split = split_mach_deg_1(M, '-') / M
-     else
-       P_split = M_2_minus * ((-2.0 - M) + 16.0 * alpha * M * M_2_plus)
-     endif
-   endif
- endfunction split_pressure_deg_5_old
-
-
- pure function split_pressure_deg_5(M, plus_or_minus, alpha) result(P_split)
-   !< Implementation of the 5th order polynomial split pressure function P±(5).
-   !< See Eq. 24 in Ref [1]
-
-   real(KIND=8), intent(in) :: M                     !< Mach number
-   real(KIND=8), intent(in) :: alpha
-   character(len=1), intent(in) :: plus_or_minus !< Which split? '+' or '-'
-   real(KIND=8) :: P_split                           !< Split pressure factor
-
-   
-   if(plus_or_minus == '+') then
-     ! P+(5)
-     if(abs(M) >= 1.0) then
-       P_split = 0.5*(1+SIGN(1.d0,M))
-     else
-       P_split = 0.25*(M+1.)**2*(2.-M) + alpha*M*(M*M-1.)**2
-     endif
-   else
-     ! P-(5)
-      if(abs(M) >= 1.0) then
-         P_split = 0.5*(1-SIGN(1.d0,M))
-       else
-         P_split = 0.25*(M-1.)**2*(2.+M) + alpha*M*(M*M-1.)**2
-       endif
-   endif
- endfunction split_pressure_deg_5
-
- pure real(KIND=8) function scaling_factor(M_0) result(f_a)
-   !< Scaling function, Eq. 72
-   real(KIND=8), intent(in) :: M_0 ! Reference Mach number
-   f_a = M_0 * (2.0 - M_0)
- endfunction scaling_factor
-
-! End functions from https://github.com/smillerc/cato
-
-
-
-
-
-
-
-
-
-   subroutine compute_fluxes_AUSMplusup_old(U_L, U_R, nx, ny, flux, A_ele, SP_ID) !(U_L, U_R, nx, ny, F_dot_n, A_ele, dLR, SP_ID)
-      
-      implicit none
-
-
-      real(kind=8), dimension(:),   intent(in)  :: U_L, U_R
-      real(kind=8),                 intent(in)  :: nx, ny
-      real(kind=8), dimension(Neq), intent(out) :: flux
-
-      INTEGER,                      intent(in)  :: SP_ID
-      real(kind=8),                 intent(in)  :: A_ele
-
-
-      real(kind=8) :: rhoL,rhoR,uL,vL,uR,vR
-      real(kind=8) :: pL,pR,EL,ER,HL,HR
-      real(kind=8) :: unL,unR
-      real(kind=8) :: ML,MR
-      real(kind=8) :: mdot
-      real(kind=8) :: alpha,beta,Kp,Ku
-      real(kind=8) :: gamma
-      real(kind=8) :: astarsqL, astarsqR, ahatL, ahatR, ahalf
-      real(kind=8) :: Mbarsq, Mosq, Mo, fa, Minf, Mplus, Mminus, Mhalf, Mp, Msum
-      real(kind=8) :: rhohalf, Pplus, Pminus, Phalf, pu
-
-      alpha = 3.0d0/16.0d0
-      beta  = 1.0d0/8.0d0
-      Kp    = 0.25d0
-      Ku    = 0.75d0
-      Minf = ux0/sqrt(SPECIES(SP_ID)%GAMMA*KB/SPECIES(SP_ID)%MOLECULAR_MASS*T0)
-
-      gamma = SPECIES(SP_ID)%GAMMA
-      !--------------------------------
-      ! Left primitive variables
-      !--------------------------------
-
-      rhoL = U_L(1)
-      uL = U_L(2)/rhoL
-      vL = U_L(3)/rhoL
-      EL = U_L(4)/rhoL
-
-      pL = (gamma-1.d0)*rhoL*(EL - 0.5d0*(uL*uL+vL*vL))
-      HL = EL + pL/rhoL
-
-      !--------------------------------
-      ! Right primitive variables
-      !--------------------------------
-
-      rhoR = U_R(1)
-      uR = U_R(2)/rhoR
-      vR = U_R(3)/rhoR
-      ER = U_R(4)/rhoR
-
-      pR = (gamma-1.d0)*rhoR*(ER - 0.5d0*(uR*uR+vR*vR))
-      HR = ER + pR/rhoR
-
-      !--------------------------------
-      ! Normal velocities
-      !--------------------------------
-
-      unL = uL*nx + vL*ny
-      unR = uR*nx + vR*ny
-
-      !--------------------------------
-      ! Sound speeds
-      !--------------------------------
-
-      astarsqL = 2.*(gamma-1)/(gamma+1)*HL
-      astarsqR = 2.*(gamma-1)/(gamma+1)*HR
-
-      ahatL = astarsqL/MAX(sqrt(astarsqL), unL)
-      ahatR = astarsqR/MAX(sqrt(astarsqR), -unR)
-
-      ahalf = MIN(ahatL,ahatR)
-
-      ML = unL/ahalf
-      MR = unR/ahalf
-
-      Mbarsq = (unL*unL + unR*unR)/(2.*ahalf*ahalf)
-
-      Mosq = MIN(1., MAX(Mbarsq,Minf*Minf))
-
-      Mo = SQRT(Mosq)
-
-      fa = scaling_factor(Mo)
-
-      Mplus = split_mach_deg_4(M=ML, plus_or_minus='+', beta=beta)
-      Mminus = split_mach_deg_4(M=MR, plus_or_minus='-', beta=beta)
-
-      rhohalf = 0.5 * (rhoL + rhoR)
-
-
-
-      if(abs(pR - pL) < 1e-12) then
-         Mp = 0.0
-       else ! AUSM+-up basic scheme
-         Mp = - Kp/fa * MAX(1.0-Mbarsq, 0.0) * ((pR - pL) / (rhohalf * ahalf*ahalf))
-       end if
-      
-      ! Interface Mach number
-      Msum = Mplus + Mminus
-      if(abs(Msum) < 1e-12) Msum = 0.0
-  
-      Mhalf = Msum + Mp
-      if(abs(Mhalf) < 1e-12) Mhalf = 0.0
-
-
-
-
-      Pplus = split_pressure_deg_5(M=ML, plus_or_minus='+', alpha=alpha)
-      Pminus = split_pressure_deg_5(M=MR, plus_or_minus='-', alpha=alpha)
-
-
-
-      if(abs(unR - unL) < 1e-12) then
-         pu = 0.0
-      else
-         pu = Ku*Pplus*Pminus * (rhoL + rhoR) * (fa * ahalf) * (unR - unL)
-      end if
-  
-      phalf = Pplus * pL + Pminus * pR -pu
-
-      !--------------------------------
-      ! Fluxes
-      !--------------------------------
-
-      if (Mhalf > 0.d0) then
-         mdot = Mhalf*ahalf*rhoL
-         flux(1) = mdot
-         flux(2) = mdot*uL + nx*phalf
-         flux(3) = mdot*vL + ny*phalf
-         flux(4) = mdot*HL
-      else
-         mdot = Mhalf*ahalf*rhoR
-         flux(1) = mdot
-         flux(2) = mdot*uR + nx*phalf
-         flux(3) = mdot*vR + ny*phalf
-         flux(4) = mdot*HR
-      end if
-
-
-
-      ! Update global maximum wave speed (used for setting the time step)
-      ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, ahalf/sqrt(A_ele))
-
-   end subroutine
 
 
 
@@ -728,7 +500,7 @@ module integration
     
       end if
 
-      ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, aL/sqrt(A_ele), aR/sqrt(A_ele))
+      ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, 2.*aL/sqrt(A_ele), 2.*aR/sqrt(A_ele))
 
     
     end subroutine
@@ -759,23 +531,26 @@ module integration
       real(8) :: rhoR,uR,vR,pR,HR,aR
       real(8) :: unL,unR
       real(8) :: ML,MR
-      real(8) :: Mp,Mm
-      real(8) :: Pp,Pm
-      real(8) :: a_face
-      real(8) :: Mbar
+      real(8) :: aface
       real(8) :: mdot
-      real(8) :: pflux
-      real(8) :: rho_face
-      real(8) :: beta,Kp,Ku
+      real(8) :: rhoface
+      real(8) :: beta,Kp,Ku,sigma
       real(8) :: EL,ER
-      real(8) :: M_diff, p_diff
       real(8) :: gamma
+      real(8) :: astarL, astarR, ahatL, ahatR, Mfsq, Mrefsq, fa, alpha, p1, p2
+      real(8) :: MLP, MRM, betaLP, betaRM, pu, Mface, pflux, Minf, MP
       
       beta = 0.125d0
       Kp   = 0.25d0
       Ku   = 0.75d0
+      sigma = 1.0d0
       
       gamma = SPECIES(SP_ID)%GAMMA
+
+      Minf = ux0/sqrt(SPECIES(SP_ID)%GAMMA*KB/SPECIES(SP_ID)%MOLECULAR_MASS*T0)
+      WRITE(*,*) Minf
+      Minf = 0.3
+
       !------------------------
       ! Left state
       !------------------------
@@ -813,96 +588,102 @@ module integration
       ! Interface sound speed
       !------------------------
       
-      a_face = max(min(aL,aR),1d-8)
+      astarL = SQRT(2.*(gamma-1)/(gamma+1)*HL)
+      astarR = SQRT(2.*(gamma-1)/(gamma+1)*HR)
+
+      ahatL = astarL*astarL/MAX(astarL,  unL)
+      ahatR = astarR*astarR/MAX(astarR, -unR)
+
+      aface = MIN(ahatL,ahatR)
             
-      ML = unL / a_face
-      MR = unR / a_face
+      ML = unL / aface
+      MR = unR / aface
+
+      Mfsq = 0.5*(ML*ML+MR*MR)
+      Mrefsq = MIN(1., MAX(Mfsq, Minf*Minf))
+
+      fa = 2.*SQRT(Mrefsq) - Mrefsq
+
+      alpha = 3.0/16.0*(-4.0+5.0*fa*fa)
+
+      IF (ABS(ML) <= 1.0) THEN
+         p1 = 0.25*(ML+1.0)**2
+         p2 = (ML*ML-1.0)**2
+
+         MLP = p1 + beta*p2
+         betaLP = p1*(2.0-ML) + alpha*ML*p2
+      ELSE
+         MLP = 0.5*(ML+ABS(ML))
+         betaLP = MLP/ML
+      END IF
+
+      IF (ABS(MR) <= 1.0) THEN
+         p1 = 0.25*(mR-1.0)*(mR-1.0)
+         p2 = (mR*mR-1.0)*(mR*mR-1.0)
+
+         MRM = -p1 - beta*p2
+         betaRM = p1*(2.0+MR) - alpha*MR*p2
+      ELSE
+         MRM = 0.5*(MR-ABS(MR))
+         betaRM = MRM/MR
+      END IF
+
+
+
+
+      rhoface = 0.5*(rhoL + rhoR)
+      MP = -(Kp/fa)*MAX((1.0-sigma*Mfsq),0.0)*(pR-pL)/(rhoface*aface*aface)
+
+      Pu = -Ku*fa*betaLP*betaRM*2.0*rhoface*aface*(unR-unL)
+
+
+      Mface = MLP + MRM + MP
+
+      pflux = betaLP*pL + betaRM*pR + Pu
+
       
-      !------------------------
-      ! Mach splitting
-      !------------------------
+      ! !------------------------
+      ! ! Flux
+      ! !------------------------
+      ! mdot = aface * (MAX(Mface,0.0)*rhoL + MIN(Mface,0.0)*rhoR)
+
+      ! if (mdot >= 0.d0) then
       
-      if (abs(ML) >= 1.d0) then
-          Mp = 0.5d0*(ML + abs(ML))
-      else
-          Mp = 0.25d0*(ML+1.d0)**2 + beta*(ML**2-1.d0)**2
-      endif
+      !     flux(1) = mdot*rhoL
+      !     flux(2) = mdot*rhoL*uL + pflux*nx
+      !     flux(3) = mdot*rhoL*vL + pflux*ny
+      !     flux(4) = mdot*rhoL*HL
       
-      if (abs(MR) >= 1.d0) then
-          Mm = 0.5d0*(MR - abs(MR))
-      else
-          Mm = -0.25d0*(MR-1.d0)**2 - beta*(MR**2-1.d0)**2
-      endif
+      ! else
       
-      Mbar = Mp + Mm
+      !     flux(1) = mdot*rhoR
+      !     flux(2) = mdot*rhoR*uR + pflux*nx
+      !     flux(3) = mdot*rhoR*vR + pflux*ny
+      !     flux(4) = mdot*rhoR*HR
       
-      !------------------------
-      ! Pressure diffusion (UP)
-      !------------------------
-      
-      M_diff = -(Kp/a_face)*max(1.d0 - 0.5d0*(ML**2+MR**2),0.d0)*(pR - pL)/(rhoL + rhoR)
-      
-      !------------------------
-      ! Mass flux
-      !------------------------
-      
-      mdot = a_face*(Mp*rhoL + Mm*rhoR) + a_face*M_diff
-      
-      !------------------------
-      ! Pressure splitting
-      !------------------------
-      
-      if (abs(ML) >= 1.d0) then
-          Pp = 0.5d0*(1.d0 + sign(1.d0,ML))
-      else
-          Pp = 0.25d0*(ML+1.d0)**2*(2.d0-ML)
-      endif
-      
-      if (abs(MR) >= 1.d0) then
-          Pm = 0.5d0*(1.d0 - sign(1.d0,MR))
-      else
-          Pm = 0.25d0*(MR-1.d0)**2*(2.d0+MR)
-      endif
-      
-      !------------------------
-      ! Velocity diffusion (UP)
-      !------------------------
-      
-      p_diff = -Ku*Pp*Pm*(rhoL+rhoR)*a_face*(unR - unL)
-      
-      pflux = Pp*pL + Pm*pR + p_diff
-      
-      !------------------------
-      ! Upwind density
-      !------------------------
-      
-      if (mdot >= 0.d0) then
-          rho_face = rhoL
-      else
-          rho_face = rhoR
-      endif
-      
+      ! endif
+
+
+
       !------------------------
       ! Flux
       !------------------------
-      
-      if (mdot >= 0.d0) then
-      
-          flux(1) = mdot*rhoL
-          flux(2) = mdot*rhoL*uL + pflux*nx
-          flux(3) = mdot*rhoL*vL + pflux*ny
-          flux(4) = mdot*rhoL*HL
-      
+
+      if (Mface >= 0.d0) then
+         mdot = Mface * aface * rhoL
+         flux(1) = mdot
+         flux(2) = mdot*uL + pflux*nx
+         flux(3) = mdot*vL + pflux*ny
+         flux(4) = mdot*HL
       else
-      
-          flux(1) = mdot*rhoR
-          flux(2) = mdot*rhoR*uR + pflux*nx
-          flux(3) = mdot*rhoR*vR + pflux*ny
-          flux(4) = mdot*rhoR*HR
-      
+         mdot = Mface * aface * rhoR
+         flux(1) = mdot
+         flux(2) = mdot*uR + pflux*nx
+         flux(3) = mdot*vR + pflux*ny
+         flux(4) = mdot*HR
       endif
 
-      ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, aL/sqrt(A_ele), aR/sqrt(A_ele))
+      ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, 2.*aL/sqrt(A_ele), 2.*aR/sqrt(A_ele))
 
       
       end subroutine
@@ -947,8 +728,8 @@ module integration
       TAUYY = 2./3.*MU*(2.*DUYDY-DUXDX)
       TAUXY = MU*(DUXDY + DUYDX)
 
-      F_dot_n(2) = F_dot_n(2) - (NX*TAUXX + NY*TAUXY)
-      F_dot_n(3) = F_dot_n(3) - (NX*TAUXY + NY*TAUYY)
+      F_dot_n(2) = - (NX*TAUXX + NY*TAUXY)
+      F_dot_n(3) = - (NX*TAUXY + NY*TAUYY)
 
 
 
@@ -964,9 +745,25 @@ module integration
       UX = 0.5*(ux_L + ux_R)
       UY = 0.5*(uy_L + uy_R)
 
-      F_dot_n(4) = F_dot_n(4) - (NX*DTDX + NY*DTDY)*SPECIES(SP_ID)%KAPPA &
-                 - (UX*TAUXX + UY*TAUXY)*NX &
-                 - (UX*TAUXY + UY*TAUYY)*NY
+      call compute_primitive_from_conserved(U_L, prim, SP_ID)
+      T_L = prim(4)
+      rho_L = prim(1)
+      call compute_primitive_from_conserved(U_R, prim, SP_ID)
+      T_R = prim(4)
+
+      F_dot_n(4) = - SPECIES(SP_ID)%KAPPA*(T_R-T_L)/dLR
+
+      !F_dot_n(4) = - (NX*DTDX + NY*DTDY)*SPECIES(SP_ID)%KAPPA &
+      !             - (UX*TAUXX + UY*TAUXY)*NX &
+      !             - (UX*TAUXY + UY*TAUYY)*NY
+
+      !F_dot_n(4) = F_dot_n(4) - (UX*TAUXX + UY*TAUXY)*NX &
+      !                        - (UX*TAUXY + UY*TAUYY)*NY
+
+      ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, &
+      SPECIES(SP_ID)%KAPPA/(2*A_ele*rho_L*SPECIES(SP_ID)%CP))
+
+
 
    end subroutine
 

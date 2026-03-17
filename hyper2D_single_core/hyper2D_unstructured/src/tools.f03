@@ -17,7 +17,7 @@ module tools
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
-   SUBROUTINE GRID_SAVE(t_ID, U)
+   SUBROUTINE GRID_SAVE(t_ID, TIME, U)
 
       ! ---------------------------------------------------------------------------------------
       ! This subroutine exports data in the legacy VTK format, that can be visualized using
@@ -39,6 +39,7 @@ module tools
 
 
       integer, intent(in) :: t_ID
+      real(kind=8), intent(in) :: TIME
       real(kind=8), dimension(:,:), intent(in) :: U
 
       real(kind=8), dimension(:,:), allocatable :: prim ! Primitive variables
@@ -85,6 +86,11 @@ module tools
 
          WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
 
+         WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+         WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+         WRITE(54321) TIME
+
+
          WRITE(54321) 'POINTS '//ITOA(U2D_GRID%NUM_NODES)//' double'//ACHAR(10)
          DO I = 1, U2D_GRID%NUM_NODES
             WRITE(54321) U2D_GRID%NODE_COORDS(:,I)
@@ -125,6 +131,10 @@ module tools
 
 
          WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
+
+         WRITE(54321,'(A)') 'FIELD FieldData 1'
+         WRITE(54321,'(A)') 'TIME 1 1 double'
+         WRITE(54321,*) TIME
          
          WRITE(54321,'(A,I10,A7)') 'POINTS', U2D_GRID%NUM_NODES, 'double'
          DO I = 1, U2D_GRID%NUM_NODES
@@ -171,6 +181,25 @@ module tools
       WRITE(TMP,'(I0)') I
       RES = TRIM(TMP)
    END FUNCTION
+
+
+
+
+   INTEGER FUNCTION SPECIES_NAME_TO_ID(NAME)
+
+      IMPLICIT NONE
+
+      CHARACTER(LEN=*), INTENT(IN)  :: NAME
+      INTEGER                       :: INDEX, MATCH
+      MATCH = -1
+      DO INDEX = 1, NSPECIES
+         IF (SPECIES(INDEX)%NAME == NAME) MATCH = INDEX
+      END DO
+
+
+      SPECIES_NAME_TO_ID = MATCH
+
+   END FUNCTION SPECIES_NAME_TO_ID
 
 
 end module 

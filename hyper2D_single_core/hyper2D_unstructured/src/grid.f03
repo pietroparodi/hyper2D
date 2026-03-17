@@ -1,5 +1,7 @@
 module grid
 
+   use global_module
+
    implicit none
 
 
@@ -60,6 +62,7 @@ module grid
       INTEGER, DIMENSION(:,:), ALLOCATABLE      :: CELL_NEIGHBORS
       REAL(KIND=8), DIMENSION(:,:,:), ALLOCATABLE :: EDGE_NORMAL
       REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: CELL_EDGES_LEN
+      REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: CELL_FACES_AREA
       INTEGER, DIMENSION(:,:), ALLOCATABLE      :: CELL_EDGES_PG
       INTEGER, DIMENSION(:,:), ALLOCATABLE      :: CELL_EDGES_BOUNDARY_INDEX
       INTEGER, DIMENSION(:), ALLOCATABLE        :: NODES_BOUNDARY_INDEX
@@ -395,12 +398,12 @@ module grid
 
          U2D_GRID%CELL_AREAS(I) = 0.5*ABS(A(1)*(B(2)-C(2)) + B(1)*(C(2)-A(2)) + C(1)*(A(2)-B(2)))
          IF (DIMS == 2 .AND. .NOT. AXI) THEN
-            U2D_GRID%CELL_VOLUMES(I) = U2D_GRID%CELL_AREAS(I) * (ZMAX-ZMIN)
+            U2D_GRID%CELL_VOLUMES(I) = U2D_GRID%CELL_AREAS(I) * 1.d0
             !WRITE(*,*) U2D_GRID%CELL_VOLUMES(I)
          END IF
          IF (DIMS == 2 .AND. AXI) THEN
             RAD = (A(2)+B(2)+C(2))/3.
-            U2D_GRID%CELL_VOLUMES(I) = U2D_GRID%CELL_AREAS(I) * (ZMAX-ZMIN)*RAD
+            U2D_GRID%CELL_VOLUMES(I) = U2D_GRID%CELL_AREAS(I) * 2.*PI*RAD
          END IF
       END DO
 
@@ -500,6 +503,8 @@ module grid
       IND(3,:) = [3,1]
       ALLOCATE(U2D_GRID%EDGE_NORMAL(3, 3, U2D_GRID%NUM_CELLS))
       ALLOCATE(U2D_GRID%CELL_EDGES_LEN(3, U2D_GRID%NUM_CELLS))
+      ALLOCATE(U2D_GRID%CELL_FACES_AREA(3, U2D_GRID%NUM_CELLS))
+
       DO I = 1, U2D_GRID%NUM_CELLS
          DO J = 1, 3
             X1 = U2D_GRID%NODE_COORDS(1, U2D_GRID%CELL_NODES(IND(J,1),I))
@@ -511,6 +516,7 @@ module grid
             U2D_GRID%EDGE_NORMAL(1,J,I) = (Y2-Y1)/LEN
             U2D_GRID%EDGE_NORMAL(2,J,I) = (X1-X2)/LEN
             U2D_GRID%EDGE_NORMAL(3,J,I) = 0.d0
+            U2D_GRID%CELL_FACES_AREA(J,I) = 2.*PI*LEN*(Y1+Y2)
          END DO
       END DO
 
@@ -660,10 +666,10 @@ module grid
 
          U1D_GRID%SEGMENT_LENGTHS(I) = SQRT((B(1) - A(1))**2 + (B(2) - A(2))**2)
          IF (.NOT. AXI) THEN
-            U1D_GRID%SEGMENT_AREAS(I) = U1D_GRID%SEGMENT_LENGTHS(I) * (ZMAX-ZMIN)
+            U1D_GRID%SEGMENT_AREAS(I) = U1D_GRID%SEGMENT_LENGTHS(I) * 1.d0
          ELSE
             RAD = 0.5*(A(2)+B(2))
-            U1D_GRID%SEGMENT_AREAS(I) = U1D_GRID%SEGMENT_LENGTHS(I) * (ZMAX-ZMIN)*RAD
+            U1D_GRID%SEGMENT_AREAS(I) = U1D_GRID%SEGMENT_LENGTHS(I) * 2.*PI*RAD
          END IF
       END DO
 
