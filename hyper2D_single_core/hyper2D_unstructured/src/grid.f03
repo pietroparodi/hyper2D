@@ -69,6 +69,7 @@ module grid
       INTEGER, DIMENSION(:), ALLOCATABLE        :: CELL_PG
       INTEGER, DIMENSION(:,:), ALLOCATABLE      :: PG_NODES
       REAL(KIND=8), DIMENSION(:,:,:), ALLOCATABLE :: BASIS_COEFFS
+      REAL(KIND=8), DIMENSION(:,:,:), ALLOCATABLE :: LSTSQ_COEFFS
       INTEGER, DIMENSION(:), ALLOCATABLE        :: PERIODIC_RELATED_NODE
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: CELL_VOLUMES
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: CELL_AREAS
@@ -167,6 +168,8 @@ module grid
 
       LOGICAL, DIMENSION(:), ALLOCATABLE :: NODE_ON_BOUNDARY
       INTEGER :: NUM_BOUNDARY_NODES, NUM_BOUNDARY_ELEM
+
+      REAL(KIND=8) :: DX1, DX2, DX3, DY1, DY2, DY3, XP, YP, W1, W2, W3
 
       ! Open input file for reading
       OPEN(UNIT=in5,FILE='testgrid.su2', STATUS='old',IOSTAT=ios)
@@ -516,7 +519,11 @@ module grid
             U2D_GRID%EDGE_NORMAL(1,J,I) = (Y2-Y1)/LEN
             U2D_GRID%EDGE_NORMAL(2,J,I) = (X1-X2)/LEN
             U2D_GRID%EDGE_NORMAL(3,J,I) = 0.d0
-            U2D_GRID%CELL_FACES_AREA(J,I) = 2.*PI*LEN*(Y1+Y2)
+            IF (AXI) THEN
+               U2D_GRID%CELL_FACES_AREA(J,I) = PI*LEN*(Y1+Y2)
+            ELSE
+               U2D_GRID%CELL_FACES_AREA(J,I) = LEN
+            END IF
          END DO
       END DO
 
@@ -577,6 +584,96 @@ module grid
 
       END DO
 
+
+      WRITE(*,*) '==========================================='
+      WRITE(*,*) 'Computing least squares matrices.'
+      WRITE(*,*) '==========================================='
+
+
+      ALLOCATE(U2D_GRID%LSTSQ_COEFFS(2,3,NCELLS))
+
+      DO I = 1, NCELLS
+         V1 = U2D_GRID%CELL_NEIGHBORS(1,I)
+         V2 = U2D_GRID%CELL_NEIGHBORS(2,I)
+         V3 = U2D_GRID%CELL_NEIGHBORS(3,I)
+
+         XP = U2D_GRID%CELL_CENTROIDS(1, I)
+         YP = U2D_GRID%CELL_CENTROIDS(2, I)
+
+         IF (V1 == -1) THEN
+            W1 = 0.d0
+            DX1 = 1.d6
+            DY1 = 1.d6
+         ELSE
+            DX1 = U2D_GRID%CELL_CENTROIDS(1, V1) - XP
+            DY1 = U2D_GRID%CELL_CENTROIDS(2, V1) - YP
+            W1 = 1./SQRT(DX1*DX1 + DY1*DY1)
+         END IF
+
+         IF (V2 == -1) THEN
+            W2 = 0.d0
+            DX2 = 1.d6
+            DY2 = 1.d6
+         ELSE
+            DX2 = U2D_GRID%CELL_CENTROIDS(1, V2) - XP
+            DY2 = U2D_GRID%CELL_CENTROIDS(2, V2) - YP
+            W2 = 1./SQRT(DX2*DX2 + DY2*DY2)
+         END IF
+
+         IF (V3 == -1) THEN
+            W3 = 0.d0
+            DX3 = 1.d6
+            DY3 = 1.d6
+         ELSE
+            DX3 = U2D_GRID%CELL_CENTROIDS(1, V3) - XP
+            DY3 = U2D_GRID%CELL_CENTROIDS(2, V3) - YP
+            W3 = 1./SQRT(DX3*DX3 + DY3*DY3)
+         END IF
+
+         U2D_GRID%LSTSQ_COEFFS(1,1,I) = dx3*w3*(-dx1*dy1*w1**2 - dx2*dy2*w2**2 - dx3*dy3*w3**2)/(dx1**2*dy2**2*w1**2*w2**2 + & 
+         dx1**2*dy3**2*w1**2*w3**2 - 2*dx1*dx2*dy1*dy2*w1**2*w2**2 - 2*dx1*dx3*dy1*dy3*w1**2*w3**2 + dx2**2*dy1**2*w1**2*w2**2 + &
+         dx2**2*dy3**2*w2**2*w3**2 - 2*dx2*dx3*dy2*dy3*w2**2*w3**2 + dx3**2*dy1**2*w1**2*w3**2 + dx3**2*dy2**2*w2**2*w3**2) + &
+         dy3*w3*(dx1**2*w1**2 + dx2**2*w2**2 + dx3**2*w3**2)/(dx1**2*dy2**2*w1**2*w2**2 + dx1**2*dy3**2*w1**2*w3**2 - &
+         2*dx1*dx2*dy1*dy2*w1**2*w2**2 - 2*dx1*dx3*dy1*dy3*w1**2*w3**2 + dx2**2*dy1**2*w1**2*w2**2 + dx2**2*dy3**2*w2**2*w3**2 - &
+         2*dx2*dx3*dy2*dy3*w2**2*w3**2 + dx3**2*dy1**2*w1**2*w3**2 + dx3**2*dy2**2*w2**2*w3**2)
+
+         U2D_GRID%LSTSQ_COEFFS(1,2,I) = dx2*w2*(dy1**2*w1**2 + dy2**2*w2**2 + dy3**2*w3**2)/(dx1**2*dy2**2*w1**2*w2**2 + &
+         dx1**2*dy3**2*w1**2*w3**2 - 2*dx1*dx2*dy1*dy2*w1**2*w2**2 - 2*dx1*dx3*dy1*dy3*w1**2*w3**2 + dx2**2*dy1**2*w1**2*w2**2 + &
+         dx2**2*dy3**2*w2**2*w3**2 - 2*dx2*dx3*dy2*dy3*w2**2*w3**2 + dx3**2*dy1**2*w1**2*w3**2 + dx3**2*dy2**2*w2**2*w3**2) + &
+         dy2*w2*(-dx1*dy1*w1**2 - dx2*dy2*w2**2 - dx3*dy3*w3**2)/(dx1**2*dy2**2*w1**2*w2**2 + dx1**2*dy3**2*w1**2*w3**2 - &
+         2*dx1*dx2*dy1*dy2*w1**2*w2**2 - 2*dx1*dx3*dy1*dy3*w1**2*w3**2 + dx2**2*dy1**2*w1**2*w2**2 + dx2**2*dy3**2*w2**2*w3**2 - &
+         2*dx2*dx3*dy2*dy3*w2**2*w3**2 + dx3**2*dy1**2*w1**2*w3**2 + dx3**2*dy2**2*w2**2*w3**2)
+
+         U2D_GRID%LSTSQ_COEFFS(1,3,I) = dx3*w3*(dy1**2*w1**2 + dy2**2*w2**2 + dy3**2*w3**2)/(dx1**2*dy2**2*w1**2*w2**2 + &
+         dx1**2*dy3**2*w1**2*w3**2 - 2*dx1*dx2*dy1*dy2*w1**2*w2**2 - 2*dx1*dx3*dy1*dy3*w1**2*w3**2 + dx2**2*dy1**2*w1**2*w2**2 + &
+         dx2**2*dy3**2*w2**2*w3**2 - 2*dx2*dx3*dy2*dy3*w2**2*w3**2 + dx3**2*dy1**2*w1**2*w3**2 + dx3**2*dy2**2*w2**2*w3**2) + &
+         dy3*w3*(-dx1*dy1*w1**2 - dx2*dy2*w2**2 - dx3*dy3*w3**2)/(dx1**2*dy2**2*w1**2*w2**2 + dx1**2*dy3**2*w1**2*w3**2 - &
+         2*dx1*dx2*dy1*dy2*w1**2*w2**2 - 2*dx1*dx3*dy1*dy3*w1**2*w3**2 + dx2**2*dy1**2*w1**2*w2**2 + dx2**2*dy3**2*w2**2*w3**2 - &
+         2*dx2*dx3*dy2*dy3*w2**2*w3**2 + dx3**2*dy1**2*w1**2*w3**2 + dx3**2*dy2**2*w2**2*w3**2)
+
+         U2D_GRID%LSTSQ_COEFFS(2,1,I) = dx1*w1*(-dx1*dy1*w1**2 - dx2*dy2*w2**2 - dx3*dy3*w3**2)/(dx1**2*dy2**2*w1**2*w2**2 + &
+         dx1**2*dy3**2*w1**2*w3**2 - 2*dx1*dx2*dy1*dy2*w1**2*w2**2 - 2*dx1*dx3*dy1*dy3*w1**2*w3**2 + dx2**2*dy1**2*w1**2*w2**2 + &
+         dx2**2*dy3**2*w2**2*w3**2 - 2*dx2*dx3*dy2*dy3*w2**2*w3**2 + dx3**2*dy1**2*w1**2*w3**2 + dx3**2*dy2**2*w2**2*w3**2) + &
+         dy1*w1*(dx1**2*w1**2 + dx2**2*w2**2 + dx3**2*w3**2)/(dx1**2*dy2**2*w1**2*w2**2 + dx1**2*dy3**2*w1**2*w3**2 - &
+         2*dx1*dx2*dy1*dy2*w1**2*w2**2 - 2*dx1*dx3*dy1*dy3*w1**2*w3**2 + dx2**2*dy1**2*w1**2*w2**2 + dx2**2*dy3**2*w2**2*w3**2 - &
+         2*dx2*dx3*dy2*dy3*w2**2*w3**2 + dx3**2*dy1**2*w1**2*w3**2 + dx3**2*dy2**2*w2**2*w3**2)
+
+         U2D_GRID%LSTSQ_COEFFS(2,2,I) = dx2*w2*(-dx1*dy1*w1**2 - dx2*dy2*w2**2 - dx3*dy3*w3**2)/(dx1**2*dy2**2*w1**2*w2**2 + &
+         dx1**2*dy3**2*w1**2*w3**2 - 2*dx1*dx2*dy1*dy2*w1**2*w2**2 - 2*dx1*dx3*dy1*dy3*w1**2*w3**2 + dx2**2*dy1**2*w1**2*w2**2 + &
+         dx2**2*dy3**2*w2**2*w3**2 - 2*dx2*dx3*dy2*dy3*w2**2*w3**2 + dx3**2*dy1**2*w1**2*w3**2 + dx3**2*dy2**2*w2**2*w3**2) + &
+         dy2*w2*(dx1**2*w1**2 + dx2**2*w2**2 + dx3**2*w3**2)/(dx1**2*dy2**2*w1**2*w2**2 + dx1**2*dy3**2*w1**2*w3**2 - &
+         2*dx1*dx2*dy1*dy2*w1**2*w2**2 - 2*dx1*dx3*dy1*dy3*w1**2*w3**2 + dx2**2*dy1**2*w1**2*w2**2 + dx2**2*dy3**2*w2**2*w3**2 - &
+         2*dx2*dx3*dy2*dy3*w2**2*w3**2 + dx3**2*dy1**2*w1**2*w3**2 + dx3**2*dy2**2*w2**2*w3**2)
+
+         U2D_GRID%LSTSQ_COEFFS(2,2,I) = dx3*w3*(-dx1*dy1*w1**2 - dx2*dy2*w2**2 - dx3*dy3*w3**2)/(dx1**2*dy2**2*w1**2*w2**2 + &
+         dx1**2*dy3**2*w1**2*w3**2 - 2*dx1*dx2*dy1*dy2*w1**2*w2**2 - 2*dx1*dx3*dy1*dy3*w1**2*w3**2 + dx2**2*dy1**2*w1**2*w2**2 + &
+         dx2**2*dy3**2*w2**2*w3**2 - 2*dx2*dx3*dy2*dy3*w2**2*w3**2 + dx3**2*dy1**2*w1**2*w3**2 + dx3**2*dy2**2*w2**2*w3**2) + &
+         dy3*w3*(dx1**2*w1**2 + dx2**2*w2**2 + dx3**2*w3**2)/(dx1**2*dy2**2*w1**2*w2**2 + dx1**2*dy3**2*w1**2*w3**2 - &
+         2*dx1*dx2*dy1*dy2*w1**2*w2**2 - 2*dx1*dx3*dy1*dy3*w1**2*w3**2 + dx2**2*dy1**2*w1**2*w2**2 + dx2**2*dy3**2*w2**2*w3**2 - &
+         2*dx2*dx3*dy2*dy3*w2**2*w3**2 + dx3**2*dy1**2*w1**2*w3**2 + dx3**2*dy2**2*w2**2*w3**2)
+
+
+      END DO
 
       WRITE(*,*) '==========================================='
       WRITE(*,*) 'Creating boundary grid.'

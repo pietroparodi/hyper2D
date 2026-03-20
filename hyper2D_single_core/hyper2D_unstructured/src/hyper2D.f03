@@ -41,7 +41,7 @@ program hyper2D
    SPECIES(1)%NAME = 'I2'
    SPECIES(1)%MOLECULAR_MASS = 1.66e-27*254
    SPECIES(1)%DIAM = 560.d-12
-   SPECIES(1)%GAMMA = 1.4
+   SPECIES(1)%GAMMA = 1.66666666
    SPECIES(1)%CP = SPECIES(1)%GAMMA/(SPECIES(1)%GAMMA-1)*1.380649d-23/SPECIES(1)%MOLECULAR_MASS
    SPECIES(1)%KAPPA = 0.0031
    SPECIES(1)%MU = 15.0d-6
@@ -52,7 +52,7 @@ program hyper2D
    SPECIES(2)%GAMMA = 1.66666666
    SPECIES(2)%CP = SPECIES(2)%GAMMA/(SPECIES(2)%GAMMA-1)*1.380649d-23/SPECIES(2)%MOLECULAR_MASS
    SPECIES(2)%KAPPA = 0.0050
-   SPECIES(2)%MU =20.0d-6
+   SPECIES(2)%MU = 20.0d-6
 
 
    ! SPECIES(1)%NAME = 'inviscid'
@@ -131,7 +131,9 @@ program hyper2D
       t_ID  = t_ID + 1
       t_now = t_now + dt
 
-      ws_over_sqrtA_maxabs = 0.0 ! Global variable, init to zero
+      invdt_adv = 0.0 ! Global variable, init to zero
+      invdt_cond = 0.0
+      invdt_diff = 0.0
 
       ! ------ Integrate by dt ------
       call forward_Euler_step(U, U_new, dt)
@@ -144,8 +146,10 @@ program hyper2D
       end if
 
       ! ------ Estimate current Courant number and update time step -----
-      CFL_now = ws_over_sqrtA_maxabs*dt
-      write(*,'(A,EN15.5,A,F10.5,A,ES14.7,A)') 'Time', t_now, ' [s]. Current CFL: ', CFL_now, '. dt = ', dt, '[s]'
+      CFL_now = MAX(invdt_adv,invdt_cond, invdt_diff)*dt
+      write(*,'(A,EN15.5,A,F10.5,A,ES14.7,A,A,F10.5,A,F10.5,A,F10.5)') 'Time', t_now, &
+      ' [s]. Current CFL: ', CFL_now, '. dt = ', dt, '[s]', &
+      ' CFL Advection: ', invdt_adv*dt, ' CFL Conduction: ', invdt_cond*dt, ' CFL Diffusion: ', invdt_diff*dt
       dt      = MIN(dt*CFL_target/CFL_now, dtmax)
 
    end do

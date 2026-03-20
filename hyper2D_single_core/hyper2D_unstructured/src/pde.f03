@@ -18,7 +18,7 @@ module pde
 
       real(kind=8), dimension(:,:), intent(inout) :: U
 
-      real(kind=8) :: n0, P0
+      real(kind=8) :: n0, P0, rho
       INTEGER :: I, J
 
       ALLOCATE(U_inlet(NSPECIES*Neq))
@@ -28,7 +28,8 @@ module pde
       DO I = 1, NSPECIES
          J = 4*(I-1)
 
-         n0   = rho0/SPECIES(I)%MOLECULAR_MASS   ! [particles/m^3] number density
+         n0   = 9.657294d19/2.   ! [particles/m^3] number density
+         rho = n0*SPECIES(I)%MOLECULAR_MASS
          P0   = n0*kB*T0 ! [Pa] gas pressure
 
          ! Initialize all cells 
@@ -38,10 +39,10 @@ module pde
          ! U(J+4,:) = rho0*(0**2 + 0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
 
          ! Initialize all cells 
-         U(J+1,:) = rho0     ! Density
-         U(J+2,:) = rho0*ux0 ! Momentum along x
-         U(J+3,:) = rho0*uy0 ! Momentum along y
-         U(J+4,:) = rho0*(ux0**2 + uy0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
+         U(J+1,:) = rho     ! Density
+         U(J+2,:) = rho*ux0 ! Momentum along x
+         U(J+3,:) = rho*uy0 ! Momentum along y
+         U(J+4,:) = rho*(ux0**2 + uy0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
 
 
 
@@ -131,7 +132,7 @@ module pde
       ! Update global maximum wave speed (used for setting the time step)
       ws_max = MAX(abs(ws_max), abs(ws_min))
 
-      ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, ws_max/sqrt(A_ele))
+      invdt_adv = MAX(invdt_adv, ws_max/sqrt(A_ele))
 
    end subroutine
 

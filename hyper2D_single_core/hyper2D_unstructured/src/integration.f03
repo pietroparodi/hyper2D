@@ -47,6 +47,175 @@ module integration
          END DO
       END DO
 
+      call compute_cell_centered_gradients_weighted_least_squares(Uprim, gradUprim)
+
+      do eleID = 1, NCELLS
+
+         Acell = U2D_GRID%CELL_AREAS(eleID)
+         Vcell = U2D_GRID%CELL_VOLUMES(eleID)
+         U_new(:,eleID) = U(:,eleID) ! Init
+
+         do intID = 1, 3 ! Only quad element supported
+
+            F_dot_n_hyper = 0.0 ! Init
+            F_dot_n_diff = 0.0 ! Init
+
+            ! Extract data
+            Aface = U2D_GRID%CELL_FACES_AREA(intID,eleID)
+            nx = U2D_GRID%EDGE_NORMAL(1,intID,eleID)
+            ny = U2D_GRID%EDGE_NORMAL(2,intID,eleID)
+
+            neigh = U2D_GRID%CELL_NEIGHBORS(intID,eleID)
+
+            ! Check what neighbor is it
+            DO I = 1, NSPECIES
+               FIRST = (I-1)*Neq+1
+               LAST = I*Neq+1
+
+               if (neigh .NE. -1) then ! +++++++++ INTERNAL CELL
+
+                  C1 = U2D_GRID%CELL_CENTROIDS(:,eleID)
+                  C2 = U2D_GRID%CELL_CENTROIDS(:,neigh)
+                  dLR = NORM2(C2-C1)
+                  U_neigh = U(FIRST:LAST,neigh)
+                  gradUprim_neigh = gradUprim(:,FIRST:LAST,neigh)
+               else
+                  dLR = SQRT(Acell)
+                  FACE_PG = U2D_GRID%CELL_EDGES_PG(intID,eleID)
+                  if (GRID_BC(FACE_PG)%PARTICLE_BC == INLET) then ! ++++++++ INLET BOUNDARY +++++++++++++++++++
+                     U_neigh = U_inlet(FIRST:LAST)
+                     gradUprim_neigh = gradUprim(:,FIRST:LAST,eleID)
+                  else if (GRID_BC(FACE_PG)%PARTICLE_BC == OUTLET) then ! ++++++++ OUTLET BOUNDARY +++++++++++++++++++
+                     U_neigh = U_outlet(FIRST:LAST)
+                     gradUprim_neigh = gradUprim(:,FIRST:LAST,eleID)
+                  else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL BOUNDARY ++++++++++++++++++++
+                     call compute_wall_state(U(FIRST:LAST,eleID), &
+                     nx, ny, U_wall, I)
+                     U_neigh = U_wall
+                     gradUprim_neigh = gradUprim(:,FIRST:LAST,eleID)
+                  else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
+                     call compute_sym_state(U(FIRST:LAST,eleID), &
+                     nx, ny, U_sym, I)
+                     U_neigh = U_sym
+                     gradUprim_neigh = gradUprim(:,FIRST:LAST,eleID)
+                  else
+                     print*, "ERROR! UNKNOWN BOUNDARY TYPE ", neigh, " for element ", eleID, &
+                     " Check the mesh or the pre-processing."
+                     print*, "ABORTING!"
+                     STOP
+                  end if
+               end if
+
+               call compute_fluxes_AUSMplusup(U(FIRST:LAST,eleID), U_neigh, &
+               nx, ny, F_dot_n_hyper(FIRST:LAST), Acell, I)
+               call compute_fluxes_diffusive(U(FIRST:LAST,eleID), U_neigh, &
+               gradUprim(:,FIRST:LAST,eleID), gradUprim_neigh, &
+               nx, ny, F_dot_n_diff(FIRST:LAST), Acell, dLR, I)
+               !F_dot_n_diff = 0.d0
+
+            END DO
+
+
+            F_dot_n_wall = 0.d0
+            IF (neigh == -1) THEN ! +++++++++ BOUNDARY CELL
+               dLR = SQRT(Acell)
+               FACE_PG = U2D_GRID%CELL_EDGES_PG(intID,eleID)
+               IF (GRID_BC(FACE_PG)%REACT) THEN
+                  !WRITE(*,*) F_dot_n_hyper
+                  F_dot_n_hyper = 0.d0
+                  !WRITE(*,*) 'Set zero flux for cell ', eleID, ' face ', intID
+                  CALL compute_wall_fluxes(U(:,eleID), nx, ny, F_dot_n_wall)
+                  !WRITE(*,*) F_dot_n_hyper
+               END IF
+            END IF
+            !F_dot_n_wall = 0.d0
+
+
+            ! Update solution
+            !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_diff)*Aface/Vcell
+            U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_diff + F_dot_n_wall)*Aface/Vcell
+            !WRITE(*,*) F_dot_n_diff
+            !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_wall)*Aface/Vcell
+            !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper)*Aface/Vcell
+
+
+
+            ! Check that the solution did not diverge
+            do eqID = 1, NSPECIES*Neq
+               if (isnan(U_new(eqID,eleID))) then 
+                  print*, 'Solution diverged, try with a smaller time step! Aborting.'
+                  print*, 'Solution that diverged: ', U_new(:,eleID)
+                  print*, 'in cell ID = ', eleID
+                  stop
+               end if
+            end do
+
+         end do ! End loop on interfaces
+
+         ! Add source terms
+         call compute_source_terms(U(:,eleID), S, eleID)
+
+         U_new(:,eleID) = U_new(:,eleID) + dt*S
+
+   
+      end do ! End loop on elements
+   
+      U = U_new ! Save results
+
+      DEALLOCATE(F_dot_n_hyper)
+      DEALLOCATE(F_dot_n_diff)
+      DEALLOCATE(S)
+      DEALLOCATE(Uprim)
+      DEALLOCATE(gradUprim)
+
+
+   end subroutine
+
+
+
+
+
+
+
+      ! ======================================================================== 
+   
+   subroutine ImEx_step(U, U_new, dt)
+
+      ! This function performs one step of the Forward Euler explicit time integrator 
+
+      implicit none
+   
+      real(kind=8), dimension(:,:), intent(inout)  :: U, U_new
+
+      real(kind=8), intent(in) :: dt
+      integer :: eleID, eqID, intID
+      
+      real(kind=8), dimension(Neq) :: U_sym, U_wall, U_neigh
+      real(kind=8), dimension(2,Neq) :: gradUprim_neigh
+      real(kind=8), dimension(:), allocatable :: F_dot_n_hyper, F_dot_n_diff, F_dot_n_wall, S
+      real(kind=8) :: nx, ny, Aface, Acell, Vcell, dLR
+      integer      :: neigh, FACE_PG, I, FIRST, LAST
+      real(kind=8), dimension(3) :: C1, C2
+
+      real(kind=8), dimension(:,:), ALLOCATABLE :: Uprim
+      real(kind=8), dimension(:,:,:), ALLOCATABLE :: gradUprim
+
+      ALLOCATE(F_dot_n_hyper(NSPECIES*Neq))
+      ALLOCATE(F_dot_n_diff(NSPECIES*Neq))
+
+      ALLOCATE(F_dot_n_wall(NSPECIES*Neq))
+      ALLOCATE(S(NSPECIES*Neq))
+      ALLOCATE(Uprim(NSPECIES*Neq,NCELLS))
+      ALLOCATE(gradUprim(2,NSPECIES*Neq,NCELLS))
+
+      DO eleID = 1, NCELLS
+         DO I = 1, NSPECIES
+            FIRST = (I-1)*Neq+1
+            LAST = I*Neq+1
+            call compute_primitive_from_conserved(U(FIRST:LAST,eleID), Uprim(FIRST:LAST,eleID), I)
+         END DO
+      END DO
+
       call compute_cell_centered_gradients_green_gauss(Uprim, gradUprim)
 
       do eleID = 1, NCELLS
@@ -111,6 +280,7 @@ module integration
                call compute_fluxes_diffusive(U(FIRST:LAST,eleID), U_neigh, &
                gradUprim(:,FIRST:LAST,eleID), gradUprim_neigh, &
                nx, ny, F_dot_n_diff(FIRST:LAST), Acell, dLR, I)
+               !F_dot_n_diff = 0.d0
 
             END DO
 
@@ -133,6 +303,8 @@ module integration
             !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_wall)*Aface/Vcell
             !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper)*Aface/Vcell
 
+
+
             ! Check that the solution did not diverge
             do eqID = 1, NSPECIES*Neq
                if (isnan(U_new(eqID,eleID))) then 
@@ -146,10 +318,10 @@ module integration
          end do ! End loop on interfaces
 
          ! Add source terms
-         !call compute_source_terms(U(:,eleID), Aele, S)
-         !WRITE(*,*) S
-         !WRITE(*,*) ' ' 
-         !U_new(:,eleID) = U_new(:,eleID) + dt*S
+         call compute_source_terms(U(:,eleID), S, eleID)
+
+         U_new(:,eleID) = U_new(:,eleID) + dt*S
+
    
       end do ! End loop on elements
    
@@ -161,19 +333,20 @@ module integration
       DEALLOCATE(Uprim)
       DEALLOCATE(gradUprim)
 
-   end subroutine
 
+   end subroutine
 
 
 
    ! ======================================================================== 
 
-   subroutine compute_source_terms(U, S)
+   subroutine compute_source_terms(U, S, eleID)
 
       implicit none
 
       real(kind=8), dimension(:),   intent(in)  :: U
       real(kind=8), dimension(:),   intent(out) :: S
+      INTEGER,   intent(in)                     :: eleID
       INTEGER :: I, J
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: prim
       INTEGER :: FIRST, LAST, RHOI, RHOJ, MOMXI, MOMXJ, MOMYI, MOMYJ, ENEI, ENEJ
@@ -188,54 +361,68 @@ module integration
          call compute_primitive_from_conserved(U(FIRST:LAST), prim(FIRST:LAST), I)
       END DO
 
-      DO I = 1, NSPECIES
-         DO J = I+1, NSPECIES
-            RHOI  = (I-1)*Neq+1
-            RHOJ  = (J-1)*Neq+1
-            MOMXI = (I-1)*Neq+2
-            MOMXJ = (J-1)*Neq+2
-            MOMYI = (I-1)*Neq+3
-            MOMYJ = (J-1)*Neq+3
-            ENEI  = (I-1)*Neq+4
-            ENEJ  = (J-1)*Neq+4
+      ! DO I = 1, NSPECIES
+      !    DO J = I+1, NSPECIES
+      !       RHOI  = (I-1)*Neq+1
+      !       RHOJ  = (J-1)*Neq+1
+      !       MOMXI = (I-1)*Neq+2
+      !       MOMXJ = (J-1)*Neq+2
+      !       MOMYI = (I-1)*Neq+3
+      !       MOMYJ = (J-1)*Neq+3
+      !       ENEI  = (I-1)*Neq+4
+      !       ENEJ  = (J-1)*Neq+4
 
-            ! Momentum and energy elastic source terms from [Benilov, Phys. Plasmas 4, 521–528 (1997)]
-            ! (in the low-Mach number limit)
+      !       ! Momentum and energy elastic source terms from [Benilov, Phys. Plasmas 4, 521–528 (1997)]
+      !       ! (in the low-Mach number limit)
             
-            MI = SPECIES(I)%MOLECULAR_MASS
-            MJ = SPECIES(J)%MOLECULAR_MASS
-            MIJ = MI*MJ/(MI+MJ)
+      !       MI = SPECIES(I)%MOLECULAR_MASS
+      !       MJ = SPECIES(J)%MOLECULAR_MASS
+      !       MIJ = MI*MJ/(MI+MJ)
 
-            NI = prim(RHOI)/MI
-            NJ = prim(RHOJ)/MJ
-            UXI = prim(MOMXI)
-            UXJ = prim(MOMXJ)
-            UYI = prim(MOMYI)
-            UYJ = prim(MOMYJ)
-            TI = prim(ENEI)
-            TJ = prim(ENEJ)
-            TIJ = (MI*TJ+MJ*TI)/(MI+MJ)
+      !       NI = prim(RHOI)/MI
+      !       NJ = prim(RHOJ)/MJ
+      !       UXI = prim(MOMXI)
+      !       UXJ = prim(MOMXJ)
+      !       UYI = prim(MOMYI)
+      !       UYJ = prim(MOMYJ)
+      !       TI = prim(ENEI)
+      !       TJ = prim(ENEJ)
+      !       TIJ = (MI*TJ+MJ*TI)/(MI+MJ)
 
-            VTHIJ = SQRT(8*KB*TIJ/(PI*MIJ))
+      !       VTHIJ = SQRT(8*KB*TIJ/(PI*MIJ))
 
-            QIJ = PI*(0.5*(SPECIES(I)%DIAM + SPECIES(J)%DIAM))**2
+      !       QIJ = PI*(0.5*(SPECIES(I)%DIAM + SPECIES(J)%DIAM))**2
 
-            S_MOM_IJ = 4./3.*MIJ*VTHIJ*QIJ*NI*NJ
-            !S(MOMXI) = S(MOMXI) + S_MOM_IJ*( UXJ - UXI )
-            !S(MOMXJ) = S(MOMXJ) - S_MOM_IJ*( UXJ - UXI )
-            !S(MOMYI) = S(MOMYI) + S_MOM_IJ*( UYJ - UYI )
-            !S(MOMYJ) = S(MOMYJ) - S_MOM_IJ*( UYJ - UYI )
+      !       S_MOM_IJ = 4./3.*MIJ*VTHIJ*QIJ*NI*NJ
+      !       !S(MOMXI) = S(MOMXI) + S_MOM_IJ*( UXJ - UXI )
+      !       !S(MOMXJ) = S(MOMXJ) - S_MOM_IJ*( UXJ - UXI )
+      !       !S(MOMYI) = S(MOMYI) + S_MOM_IJ*( UYJ - UYI )
+      !       !S(MOMYJ) = S(MOMYJ) - S_MOM_IJ*( UYJ - UYI )
 
-            UIDOTW = UXI*(UXI-UXJ) + UYI*(UYI-UYJ)
-            UJDOTW = UXJ*(UXI-UXJ) + UYJ*(UYI-UYJ)
-            S_ENE_IJ = 4./3.*MIJ/(MI+MJ)*VTHIJ*QIJ*NI*NJ*(3*KB*(TI-TJ) + MI*TJ/TIJ*UIDOTW + MJ*TI/TIJ*UJDOTW)
-            !S(ENEI) = S(ENEI) - S_ENE_IJ
-            !S(ENEJ) = S(ENEJ) + S_ENE_IJ
+      !       UIDOTW = UXI*(UXI-UXJ) + UYI*(UYI-UYJ)
+      !       UJDOTW = UXJ*(UXI-UXJ) + UYJ*(UYI-UYJ)
+      !       S_ENE_IJ = 4./3.*MIJ/(MI+MJ)*VTHIJ*QIJ*NI*NJ*(3*KB*(TI-TJ) + MI*TJ/TIJ*UIDOTW + MJ*TI/TIJ*UJDOTW)
+      !       !S(ENEI) = S(ENEI) - S_ENE_IJ
+      !       !S(ENEJ) = S(ENEJ) + S_ENE_IJ
 
-            ! Update stability constraints
-            !ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, 4./3.*NI*QIJ*VTHIJ, 4./3.*NJ*QIJ*VTHIJ)
+      !       ! Update stability constraints
+      !       !invdt_adv = MAX(invdt_adv, 4./3.*NI*QIJ*VTHIJ, 4./3.*NJ*QIJ*VTHIJ)
+      !    END DO
+      ! END DO
+
+      IF (AXI) THEN
+         DO I = 1, NSPECIES
+            RHOI  = (I-1)*Neq+1
+            MOMYI = (I-1)*Neq+3
+            ENEI  = (I-1)*Neq+4
+
+            S(MOMYI) = S(MOMYI) + prim(RHOI) / SPECIES(I)%MOLECULAR_MASS*KB*prim(ENEI) &
+            / U2D_GRID%CELL_CENTROIDS(2,eleID)
+            !U2D_GRID%CELL_CENTROIDS(2,eleID)
+            !WRITE(*,*)  U2D_GRID%CELL_VOLUMES(eleID) / (U2D_GRID%CELL_AREAS(eleID) * 2.*PI)
+            ! U2D_GRID%CELL_CENTROIDS(2,eleID)
          END DO
-      END DO
+      END IF
 
       DEALLOCATE(prim)
 
@@ -295,7 +482,7 @@ module integration
          F_dot_n_wall(FIRST) = M * (Ndotout(I) - Ndotin(I))
 
          ! Momentum
-         Pflux = Ndotout(I)*0.5*SQRT(2.*M*KB*T) - Ndotin(I)*0.5*SQRT(2.*M*KB*Tw)
+         Pflux =  Ndotout(I)*0.5*SQRT(2.*PI*M*KB*T) + Ndotin(I)*0.5*SQRT(2.*PI*M*KB*Tw)
          F_dot_n_wall(FIRST+1) = nx*Pflux
          F_dot_n_wall(FIRST+2) = ny*Pflux
 
@@ -305,6 +492,8 @@ module integration
          F_dot_n_wall(FIRST+3) = Ndotout(I)*(0.5*M*Uparsq + 2.*KB*T) - Ndotin(I)*(2.*KB*Tw)
 
       END DO
+
+      !WRITE(*,*) F_dot_n_wall
 
    END SUBROUTINE
 
@@ -351,7 +540,7 @@ module integration
 
       ! Update global maximum wave speed (used for setting the time step)
       ws_max = abs(ws_max)
-      ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, ws_max/sqrt(A_ele))
+      invdt_adv = MAX(invdt_adv, ws_max/sqrt(A_ele))
 
    end subroutine
 
@@ -500,7 +689,7 @@ module integration
     
       end if
 
-      ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, 2.*aL/sqrt(A_ele), 2.*aR/sqrt(A_ele))
+      invdt_adv = MAX(invdt_adv, 2.*aL/sqrt(A_ele), 2.*aR/sqrt(A_ele))
 
     
     end subroutine
@@ -547,8 +736,8 @@ module integration
       
       gamma = SPECIES(SP_ID)%GAMMA
 
-      Minf = ux0/sqrt(SPECIES(SP_ID)%GAMMA*KB/SPECIES(SP_ID)%MOLECULAR_MASS*T0)
-      WRITE(*,*) Minf
+      !Minf = ux0/sqrt(SPECIES(SP_ID)%GAMMA*KB/SPECIES(SP_ID)%MOLECULAR_MASS*T0)
+      !WRITE(*,*) Minf
       Minf = 0.3
 
       !------------------------
@@ -683,7 +872,7 @@ module integration
          flux(4) = mdot*HR
       endif
 
-      ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, 2.*aL/sqrt(A_ele), 2.*aR/sqrt(A_ele))
+      invdt_adv = MAX(invdt_adv, 2.*aL/sqrt(A_ele), 2.*aR/sqrt(A_ele))
 
       
       end subroutine
@@ -713,10 +902,6 @@ module integration
       F_dot_n = 0.d0
 
       rho_L = U_L(1)
-
-      ! Update global maximum wave speed (used for setting the time step)
-      ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, &
-      SPECIES(SP_ID)%KAPPA/(A_ele*rho_L*SPECIES(SP_ID)%CP))
 
       DUXDX = 0.5*(gradU_L(1,2) + gradU_R(1,2))
       DUYDX = 0.5*(gradU_L(1,3) + gradU_R(1,3))
@@ -757,11 +942,11 @@ module integration
       !             - (UX*TAUXX + UY*TAUXY)*NX &
       !             - (UX*TAUXY + UY*TAUYY)*NY
 
-      !F_dot_n(4) = F_dot_n(4) - (UX*TAUXX + UY*TAUXY)*NX &
-      !                        - (UX*TAUXY + UY*TAUYY)*NY
+      F_dot_n(4) = F_dot_n(4) - (UX*TAUXX + UY*TAUXY)*NX &
+                              - (UX*TAUXY + UY*TAUYY)*NY
 
-      ws_over_sqrtA_maxabs = MAX(ws_over_sqrtA_maxabs, &
-      SPECIES(SP_ID)%KAPPA/(2*A_ele*rho_L*SPECIES(SP_ID)%CP))
+      invdt_cond = MAX(invdt_cond, 6.*SPECIES(SP_ID)%KAPPA/(A_ele*rho_L*SPECIES(SP_ID)%CP))
+      invdt_diff = MAX(invdt_diff, 6.*SPECIES(SP_ID)%MU/(A_ele*rho_L))
 
 
 
@@ -868,10 +1053,10 @@ module integration
 
       INTEGER :: I, J, neigh, FACE_PG, SP_ID, FIRST, LAST
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: Uface
-      REAL(KIND=8) :: Lint, nx, ny, Aele
-      REAL(KIND=8), DIMENSION(Neq) :: prim
+      REAL(KIND=8) :: nx, ny, Aface, Vcell
       REAL(KIND=8), DIMENSION(:), allocatable :: U_adj
 
+      LOGICAL :: ONAXIS
 
 
       ! Compute gradient in each cell from nodal values
@@ -880,12 +1065,13 @@ module integration
       ALLOCATE(U_adj(NSPECIES*Neq))
 
       DO I = 1, NCELLS
+         ONAXIS = .FALSE.
          DO J = 1, 3 ! The cell face
             ! Extract data
-            Lint = U2D_GRID%CELL_EDGES_LEN(J,I)
+            Aface = U2D_GRID%CELL_FACES_AREA(J,I)
             nx = U2D_GRID%EDGE_NORMAL(1,J,I)
             ny = U2D_GRID%EDGE_NORMAL(2,J,I)
-            Aele = U2D_GRID%CELL_AREAS(I)
+            Vcell = U2D_GRID%CELL_VOLUMES(I)
 
             neigh = U2D_GRID%CELL_NEIGHBORS(J,I)
             IF (neigh .NE. -1) THEN
@@ -919,6 +1105,7 @@ module integration
                   Uface = 0.5*(U(:,I) + U_adj)
                   !Uface = U(:,I)
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
+                  ONAXIS = .TRUE.
                   U_adj = U(:,I)
                   DO SP_ID = 1, NSPECIES
                      FIRST = (SP_ID-1)*Neq+1
@@ -935,10 +1122,108 @@ module integration
                end if
             end if
 
-            gradU(1,:,I) = gradU(1,:,I) + Uface*nx*Lint/Aele
-            gradU(2,:,I) = gradU(2,:,I) + Uface*ny*Lint/Aele
+            gradU(1,:,I) = gradU(1,:,I) + Uface*nx*Aface/Vcell
+            gradU(2,:,I) = gradU(2,:,I) + Uface*ny*Aface/Vcell
 
          END DO
+
+         !IF (ONAXIS) gradU(2,:,I) = 0.d0
+
+      END DO
+
+      DEALLOCATE(Uface)
+      DEALLOCATE(U_adj)
+
+   end subroutine
+
+
+
+
+
+   subroutine compute_cell_centered_gradients_weighted_least_squares(U, gradU)
+
+      implicit none
+   
+      real(kind=8), dimension(:,:), intent(in)  :: U
+      real(kind=8), dimension(:,:,:), intent(inout)  :: gradU
+
+      INTEGER :: I, J, neigh, FACE_PG, SP_ID, FIRST, LAST
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: Uface
+      REAL(KIND=8) :: nx, ny, Aface, Vcell
+      REAL(KIND=8), DIMENSION(:), allocatable :: U_adj
+
+      LOGICAL :: ONAXIS
+
+
+      ! Compute gradient in each cell from nodal values
+      gradU = 0.d0
+      ALLOCATE(Uface(NSPECIES*Neq))
+      ALLOCATE(U_adj(NSPECIES*Neq))
+
+      DO I = 1, NCELLS
+         ONAXIS = .FALSE.
+         DO J = 1, 3 ! The cell face
+            ! Extract data
+            Aface = U2D_GRID%CELL_FACES_AREA(J,I)
+            nx = U2D_GRID%EDGE_NORMAL(1,J,I)
+            ny = U2D_GRID%EDGE_NORMAL(2,J,I)
+            Vcell = U2D_GRID%CELL_VOLUMES(I)
+
+            neigh = U2D_GRID%CELL_NEIGHBORS(J,I)
+            IF (neigh .NE. -1) THEN
+               Uface = 0.5*(U(:,I) + U(:,neigh))
+
+            else
+               FACE_PG = U2D_GRID%CELL_EDGES_PG(J,I)
+               if (GRID_BC(FACE_PG)%PARTICLE_BC == INLET) then ! ++++++++ INLET BOUNDARY +++++++++++++++++++
+                  DO SP_ID = 1, NSPECIES
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq+1
+                     call compute_primitive_from_conserved(U_inlet(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
+                  END DO
+                  Uface = 0.5*(U(:,I) + U_adj)
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == OUTLET) then ! ++++++++ OUTLET BOUNDARY +++++++++++++++++++
+                  DO SP_ID = 1, NSPECIES
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq+1
+                     call compute_primitive_from_conserved(U_outlet(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
+                  END DO
+                  Uface = 0.5*(U(:,I) + U_adj)
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL BOUNDARY ++++++++++++++++++++
+                  U_adj = U(:,I)
+                  DO SP_ID = 1, NSPECIES
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq+1
+                     U_adj(FIRST+1) = 0.d0
+                     U_adj(FIRST+2) = 0.d0
+                     U_adj(FIRST+3) = Tw
+                  END DO
+                  Uface = 0.5*(U(:,I) + U_adj)
+                  !Uface = U(:,I)
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
+                  ONAXIS = .TRUE.
+                  U_adj = U(:,I)
+                  DO SP_ID = 1, NSPECIES
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq+1
+                     U_adj(FIRST+1) = U(FIRST+1,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*nx
+                     U_adj(FIRST+2) = U(FIRST+2,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*ny
+                  END DO
+                  Uface = 0.5*(U(:,I) + U_adj)
+               else
+                  print*, "ERROR! UNKNOWN BOUNDARY TYPE ", neigh, " for element ", I, &
+                  " Check the mesh or the pre-processing."
+                  print*, "ABORTING!"
+                  STOP
+               end if
+            end if
+
+            gradU(1,:,I) = gradU(1,:,I) + (U_adj - U(:,I))*U2D_GRID%LSTSQ_COEFFS(1,J,I)
+            gradU(2,:,I) = gradU(2,:,I) + (U_adj - U(:,I))*U2D_GRID%LSTSQ_COEFFS(2,J,I)
+
+         END DO
+
+         !IF (ONAXIS) gradU(2,:,I) = 0.d0
 
       END DO
 

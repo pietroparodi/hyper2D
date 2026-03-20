@@ -21,8 +21,8 @@ module global_module
    CHARACTER*256                           :: FLOWFIELD_SAVE_PATH = 'dumps/'
    ! Time integration
 
-   real(kind=8), parameter :: t_end      = 50.0d-0 ! [s] total simulated time (from 0 to t_end)
-   real(kind=8), parameter :: CFL_target = 0.1
+   real(kind=8), parameter :: t_end      = 0.01d0 ! [s] total simulated time (from 0 to t_end)
+   real(kind=8), parameter :: CFL_target = 0.25
    real(kind=8), parameter :: dtmax      = 1.d-2
 
 
@@ -34,14 +34,14 @@ module global_module
    !!!! TEST TEST TEST !!! integer, parameter :: reconstr_order = 1 ! 1: linear reconstruction -> second order in space
 
    ! Free stream
-   real(kind=8), parameter :: rho0 = 254.0*1.66e-27 * 4.0/(1.380649d-23*300.0)   ! [kg/m3]
+   real(kind=8), parameter :: rho0 = 100.0*254.0*1.660539e-27 * 0.4/(1.380649d-23*300.0)   ! [kg/m3]
    real(kind=8), parameter :: ux0  = 0.0    ! [m/s]
    real(kind=8), parameter :: uy0  = 0.0  ! [m/s]
    real(kind=8), parameter :: T0   = 300.0   ! [K]
    real(kind=8), parameter :: Tw   = 300.0   ! [K]
 
    ! Utilities
-   real(kind=8) :: ws_over_sqrtA_maxabs
+   real(kind=8) :: invdt_adv, invdt_cond, invdt_diff
 
 
 
