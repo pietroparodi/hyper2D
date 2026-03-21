@@ -21,11 +21,11 @@ module pde
       real(kind=8) :: n0, P0, rho
       INTEGER :: I, J
 
-      ALLOCATE(U_inlet(NSPECIES*Neq))
-      ALLOCATE(U_outlet(NSPECIES*Neq))
+      ALLOCATE(U_inlet(N_SPECIES*Neq))
+      ALLOCATE(U_outlet(N_SPECIES*Neq))
 
 
-      DO I = 1, NSPECIES
+      DO I = 1, N_SPECIES
          J = 4*(I-1)
 
          n0   = 9.657294d19/2.   ! [particles/m^3] number density

@@ -1,5 +1,10 @@
 module tools
 
+   ! Most of the code in this module comes from the Pantera PIC-DSMC code,
+   ! (https://github.com/vonkarmaninstitute/pantera-pic-dsmc) for reasons of compatibility.
+   ! Pantera is a free software by the von Karman Institute for Fluid Dynamics (VKI), 
+   ! distributed under a GNU GPLv3 license.
+
    use global_module
    use grid
    use pde
@@ -8,35 +13,15 @@ module tools
 
    contains
 
-
-
-
-
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   ! SUBROUTINE GRID_SAVE -> Saves cumulated average !!!!!!!!!!!!!!!!!!!!
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-
    SUBROUTINE GRID_SAVE(t_ID, TIME, U)
 
-      ! ---------------------------------------------------------------------------------------
-      ! This subroutine exports data in the legacy VTK format, that can be visualized using
-      ! ParaView.
-      ! This helps for checking that all is good.
-      ! The output file is put in the "dumps" directory and is named "sol_..." where ... is the
-      ! time ID "t_ID" given as an input to the subroutine.
-      ! U: conserved variables
-      ! 
-      ! Notes: 
-      !  - All cells are printed, including the two layers of ghost cells for each boundary.
-      !    This helps for debugging. 
-      !  - The data is exported for each cell center. In ParaView, you may visualize the data 
-      !    using the option "Surface with Edges": this is misleading, and these edges do not
-      !    represent the cells boundaries. Instead, each point is a cell center.
-      ! ---------------------------------------------------------------------------------------
+      ! This subroutine export data in the VTK (legacy) format.
+      ! Data can be saved both in ASCII and in binary format (preferrable).
+      ! The files can be read directly in Paraview.
+      ! A field named "TIME" contains the physical time of the snapshot.
+      ! This is not directly used by Paraview but can be used in post-processing. 
+
       IMPLICIT NONE
-
-
 
       integer, intent(in) :: t_ID
       real(kind=8), intent(in) :: TIME
@@ -50,10 +35,10 @@ module tools
 
       character(len=20), dimension(:), allocatable :: prim_names
 
-      ALLOCATE(prim_names(NSPECIES*Neq))
+      ALLOCATE(prim_names(N_SPECIES*Neq))
 
 
-      DO I = 1, NSPECIES
+      DO I = 1, N_SPECIES
          J = 4*(I-1)
          prim_names(J+1) = 'rho_'//TRIM(SPECIES(I)%NAME)
          prim_names(J+2) = 'ux_'//TRIM(SPECIES(I)%NAME)
@@ -63,11 +48,11 @@ module tools
 
       ! ----- Compute primitive variables on the grid ------
 
-      allocate(prim(NSPECIES*Neq,NCELLS))
+      allocate(prim(N_SPECIES*Neq,NCELLS))
 
       prim = 0.0 ! Init
       do IC = 1, NCELLS
-         DO I = 1, NSPECIES
+         DO I = 1, N_SPECIES
             call compute_primitive_from_conserved(U((I-1)*Neq+1:I*Neq+1,IC), prim((I-1)*Neq+1:I*Neq+1,IC), I)
          END DO
       end do
@@ -109,11 +94,11 @@ module tools
 
          WRITE(54321) 'CELL_DATA '//ITOA(NCELLS)//ACHAR(10)
 
-         WRITE(54321) 'FIELD FieldData '//ITOA( NSPECIES*Neq )//ACHAR(10)
+         WRITE(54321) 'FIELD FieldData '//ITOA( N_SPECIES*Neq )//ACHAR(10)
 
 
          ! Write per-cell value
-         DO eqID = 1, NSPECIES*Neq
+         DO eqID = 1, N_SPECIES*Neq
 
             WRITE(54321) prim_names(eqID)//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
             WRITE(54321) prim(eqID,:), ACHAR(10)
@@ -153,12 +138,12 @@ module tools
  
          
          WRITE(54321,'(A,I10)') 'CELL_DATA', NCELLS
-         WRITE(54321,'(A,I10)') 'FIELD FieldData', NSPECIES*Neq
+         WRITE(54321,'(A,I10)') 'FIELD FieldData', N_SPECIES*Neq
 
 
 
          ! Write per-cell value
-         DO eqID = 1, NSPECIES*Neq
+         DO eqID = 1, N_SPECIES*Neq
             
             WRITE(54321,'(A,I10,I10,A8)') prim_names(eqID), 1, NCELLS, 'integer'
             WRITE(54321) prim(eqID,:)
@@ -175,6 +160,10 @@ module tools
 
 
    FUNCTION ITOA(I) RESULT(RES)
+
+      ! Function to turn an integer into a string
+      ! Useful when writing files in binary mode.
+
       CHARACTER(:), ALLOCATABLE :: RES
       INTEGER, INTENT(IN) :: I
       CHARACTER(RANGE(I)+2) :: TMP
@@ -187,12 +176,16 @@ module tools
 
    INTEGER FUNCTION SPECIES_NAME_TO_ID(NAME)
 
+      ! Function that returns the ID of a species given its name string,
+      ! as defined in the species definition file.
+      ! This is primarily used to parse the input file.
+
       IMPLICIT NONE
 
       CHARACTER(LEN=*), INTENT(IN)  :: NAME
       INTEGER                       :: INDEX, MATCH
       MATCH = -1
-      DO INDEX = 1, NSPECIES
+      DO INDEX = 1, N_SPECIES
          IF (SPECIES(INDEX)%NAME == NAME) MATCH = INDEX
       END DO
 
@@ -200,6 +193,113 @@ module tools
       SPECIES_NAME_TO_ID = MATCH
 
    END FUNCTION SPECIES_NAME_TO_ID
+
+
+   INTEGER FUNCTION MIXTURE_NAME_TO_ID(NAME)
+
+      IMPLICIT NONE
+
+      CHARACTER(LEN=*), INTENT(IN)  :: NAME
+      INTEGER                       :: INDEX, MATCH
+      MATCH = -1
+      DO INDEX = 1, N_MIXTURES
+         IF (MIXTURES(INDEX)%NAME == NAME) MATCH = INDEX
+      END DO
+
+      IF (MATCH .EQ. -1) THEN
+         WRITE(*,*) 'Error! Mixture name not found.'
+      END IF
+
+      MIXTURE_NAME_TO_ID = MATCH
+
+   END FUNCTION MIXTURE_NAME_TO_ID
+
+
+
+   SUBROUTINE STRIP_COMMENTS(str,c)
+
+      ! This subroutine checks if there is any character of type 'c' in the string str,
+      ! and if so, it removes all the remaining of the string, tagged as a comment.
+      ! Also, white spaces are removed by a call to the trim() function.
+
+      IMPLICIT NONE
+      CHARACTER(LEN=*),INTENT(INOUT) :: str
+      CHARACTER(LEN=1),INTENT(IN)    :: c !comment character
+
+      CHARACTER(LEN=LEN(str)) :: str_tmp
+      INTEGER :: i
+      
+      ! Check if there is any comment to trim
+      i = INDEX(str,c)
+      IF (i .GT. 0) THEN
+         str_tmp = str(1:i-1)
+      ELSE
+         str_tmp = str
+      END IF
+      
+      ! Assign str, removing trailing blank spaces if any
+      str = TRIM(str_tmp)
+
+   END SUBROUTINE STRIP_COMMENTS
+
+
+
+   SUBROUTINE SKIP_TO(UNIT, STR, STAT)
+
+      IMPLICIT NONE
+
+      CHARACTER(*), INTENT(IN) :: STR
+      INTEGER, INTENT(IN) :: UNIT
+      INTEGER, INTENT(OUT) :: STAT
+      CHARACTER :: CH
+      INTEGER :: IO
+    
+      DO
+         READ(UNIT, IOSTAT=IO) CH
+
+         IF (IO/=0) THEN
+            STAT = 1
+            RETURN
+         END IF
+    
+         IF (CH==STR(1:1)) THEN
+            IF (LEN(STR) == 1) THEN
+               STAT = 0
+               RETURN
+            END IF
+            CALL CHECK(UNIT, STR(2:), STAT)
+            IF (STAT == 0) RETURN
+         END IF
+    
+      END DO
+   END SUBROUTINE
+
+    
+   SUBROUTINE CHECK(UNIT, STR, STAT)
+      CHARACTER(*), INTENT(IN) :: STR
+      INTEGER, INTENT(IN) :: UNIT
+      INTEGER, INTENT(OUT) :: STAT
+      CHARACTER :: CH
+      INTEGER :: I, IO
+
+      STAT = 1
+      I = 0
+
+      DO
+         I = I + 1
+
+         READ(UNIT, IOSTAT=IO) CH
+
+         IF (IO/=0) RETURN
+
+         IF (CH/=STR(I:I)) RETURN
+
+         IF (I==LEN(STR)) THEN
+            STAT = 0
+            RETURN
+         END IF
+      END DO
+   END SUBROUTINE CHECK
 
 
 end module 

@@ -15,16 +15,17 @@ module global_module
    REAL(KIND=8) :: ME   = 9.1093837139d-31               ! https://physics.nist.gov/cgi-bin/cuu/Value?me
    REAL(KIND=8) :: HP   = 6.62607015d-34                 ! https://physics.nist.gov/cgi-bin/cuu/Value?h
 
-   LOGICAL                                   :: BOOL_DUMP_MOMENTS = .FALSE.
    CHARACTER(LEN=256) :: GRID_FILENAME
    LOGICAL :: BOOL_BINARY_OUTPUT = .TRUE.
    CHARACTER*256                           :: FLOWFIELD_SAVE_PATH = 'dumps/'
    ! Time integration
 
-   real(kind=8), parameter :: t_end      = 0.01d0 ! [s] total simulated time (from 0 to t_end)
-   real(kind=8), parameter :: CFL_target = 0.25
-   real(kind=8), parameter :: dtmax      = 1.d-2
-
+   real(kind=8) :: t_end      = 0.01d0 ! [s] total simulated time (from 0 to t_end)
+   real(kind=8) :: CFL_target = 0.25
+   real(kind=8) :: dtmax      = 1.d-2
+   INTEGER      :: STATS_EVERY
+   INTEGER      :: DUMP_GRID_EVERY
+   INTEGER      :: DUMP_GRID_START
 
    
    integer, parameter :: Neq = 4 ! Number of equations (per-species)
@@ -44,13 +45,23 @@ module global_module
    real(kind=8) :: invdt_adv, invdt_cond, invdt_diff
 
 
+   REAL(KIND=8) :: BG_DENS
+   REAL(KIND=8) :: BG_TEMP
+   REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: BG_CELL_NRHO
+   INTEGER :: BG_MIX
+   LOGICAL      :: BOOL_BG_DENSITY_FILE
+
+   REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: VSS_GREFS ! Matrix of reference relative velocities for VSS
+   REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: VSS_SIGMAS ! Matrix of reference cross sections for VSS
+   REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: VSS_ALPHAS ! Matrix of reference scattering coeff. for VSS
+   REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: VSS_OMEGAS ! Matrix of reference temperature exponent for VSS
 
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !!!!!!!!! Multispecies !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-   INTEGER            :: NSPECIES = 0
+   INTEGER            :: N_SPECIES = 0
    
    TYPE SPECIES_DATA_STRUCTURE
       CHARACTER*10 :: NAME
@@ -60,16 +71,33 @@ module global_module
       REAL(KIND=8) :: CP
       REAL(KIND=8) :: KAPPA
       REAL(KIND=8) :: MU
+      REAL(KIND=8) :: OMEGA
+      REAL(KIND=8) :: TREF
+      REAL(KIND=8) :: ALPHA
+      REAL(KIND=8) :: SIGMA
    END TYPE SPECIES_DATA_STRUCTURE
 
-   TYPE(SPECIES_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: SPECIES
+   TYPE(SPECIES_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: SPECIES, TEMP_SPECIES
 
 
+   INTEGER            :: N_MIXTURES = 0
 
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   !!!!!!!!! Wall reactions !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   
+   TYPE MIXTURE_COMPONENT
+      INTEGER :: ID
+      CHARACTER*64 :: NAME
+      REAL(KIND=8) :: MOLFRAC
+   END TYPE MIXTURE_COMPONENT
+
+   TYPE MIXTURE
+      CHARACTER*64 :: NAME
+      INTEGER      :: N_COMPONENTS
+      TYPE(MIXTURE_COMPONENT), DIMENSION(:), ALLOCATABLE :: COMPONENTS
+   END TYPE MIXTURE
+
+   TYPE(MIXTURE), DIMENSION(:), ALLOCATABLE :: MIXTURES
+ 
+
+
    CHARACTER(LEN=256) :: WALL_REACTIONS_FILENAME
    INTEGER :: N_WALL_REACTIONS = 0
    
@@ -81,7 +109,36 @@ module global_module
       INTEGER :: N_PROD
    END TYPE WALL_REACTIONS_DATA_STRUCTURE
 
-   TYPE(WALL_REACTIONS_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: WALL_REACTIONS
+   TYPE(WALL_REACTIONS_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: WALL_REACTIONS, TEMP_WALL_REACTIONS
 
+
+
+   CHARACTER(LEN=256) :: REACTIONS_FILENAME
+   INTEGER :: N_REACTIONS = 0
+
+   ENUM, BIND(C)
+      ENUMERATOR FIXED_RATE, TCE, LXCAT
+   END ENUM
+   
+   TYPE REACTIONS_DATA_STRUCTURE
+      INTEGER(KIND(FIXED_RATE)) :: TYPE
+      INTEGER :: R1_SP_ID
+      INTEGER :: R2_SP_ID
+      INTEGER :: P1_SP_ID
+      INTEGER :: P2_SP_ID
+      INTEGER :: P3_SP_ID
+      INTEGER :: P4_SP_ID
+      REAL(KIND=8) :: A, N, EA
+      REAL(KIND=8) :: C1, C2, C3
+      INTEGER :: N_PROD
+      LOGICAL :: IS_CEX
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TABLE_ENERGY
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TABLE_CS
+      REAL(KIND=8) :: MAX_SIGMA
+      REAL(KIND=8) :: CONSTANT_CS
+      INTEGER :: COUNTS
+   END TYPE REACTIONS_DATA_STRUCTURE
+
+   TYPE(REACTIONS_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: REACTIONS, TEMP_REACTIONS
 
 end module

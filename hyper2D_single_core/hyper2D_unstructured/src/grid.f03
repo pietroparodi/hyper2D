@@ -1,10 +1,13 @@
 module grid
 
+   ! Most of the code in this module comes from the Pantera PIC-DSMC code,
+   ! (https://github.com/vonkarmaninstitute/pantera-pic-dsmc) for reasons of compatibility.
+   ! Pantera is a free software by the von Karman Institute for Fluid Dynamics (VKI), 
+   ! distributed under a GNU GPLv3 license.
+
    use global_module
 
    implicit none
-
-
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !!!!!!!!! Geometry, domain and grid !!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -12,7 +15,6 @@ module grid
 
    ! INTEGER      :: NX, NY, NZ
    INTEGER      :: DIMS = 2
-   REAL(KIND=8) :: XMIN, XMAX, YMIN, YMAX, ZMIN, ZMAX
    ! REAL(KIND=8) :: CELL_VOL
    LOGICAL      :: AXI = .FALSE.
    ! LOGICAL      :: BOOL_X_PERIODIC = .FALSE. ! Assign default value!
@@ -795,108 +797,6 @@ module grid
    END SUBROUTINE ERROR_ABORT
 
 
-
-   SUBROUTINE DEF_BOUNDARY_CONDITION(DEFINITION)
-
-      IMPLICIT NONE
-
-      CHARACTER(LEN=*), INTENT(IN) :: DEFINITION
-
-      INTEGER :: N_STR, I, IPG
-      CHARACTER(LEN=80), ALLOCATABLE :: STRARRAY(:)
-
-
-      CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
-
-      ! phys_group type parameters
-      IPG = -1
-      DO I = 1, N_GRID_BC
-         IF (GRID_BC(I)%PHYSICAL_GROUP_NAME == STRARRAY(1)) IPG = I
-      END DO
-      IF (IPG == -1) THEN
-         WRITE(*,*) 'Group ', STRARRAY(1), ' not found.'
-         CALL ERROR_ABORT('Error in boundary condition definition. Group name not found.')
-      END IF
-      
-      IF (STRARRAY(2) == 'vacuum') THEN
-         GRID_BC(IPG)%PARTICLE_BC = VACUUM
-         
-      
-      ELSE IF (STRARRAY(2) == 'inlet') THEN
-         GRID_BC(IPG)%PARTICLE_BC = INLET
-      ELSE IF (STRARRAY(2) == 'outlet') THEN
-         GRID_BC(IPG)%PARTICLE_BC = OUTLET
-      ELSE IF (STRARRAY(2) == 'wall') THEN
-         GRID_BC(IPG)%PARTICLE_BC = WALL
-      ELSE IF (STRARRAY(2) == 'symmetry') THEN
-         GRID_BC(IPG)%PARTICLE_BC = SYMMETRY
-
-
-      ELSE IF (STRARRAY(2) == 'specular') THEN
-         GRID_BC(IPG)%PARTICLE_BC = SPECULAR
-      ELSE IF (STRARRAY(2) == 'piston') THEN
-         GRID_BC(IPG)%PARTICLE_BC = PISTON
-         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%U_PISTON(1)
-         READ(STRARRAY(4), '(ES14.0)') GRID_BC(IPG)%U_PISTON(2)
-         READ(STRARRAY(5), '(ES14.0)') GRID_BC(IPG)%U_PISTON(3)
-      ELSE IF (STRARRAY(2) == 'diffuse') THEN
-         GRID_BC(IPG)%PARTICLE_BC = DIFFUSE
-         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%WALL_TEMP
-      ELSE IF (STRARRAY(2) == 'cll') THEN
-         GRID_BC(IPG)%PARTICLE_BC = CLL
-         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%WALL_TEMP
-         READ(STRARRAY(4), '(ES14.0)') GRID_BC(IPG)%ACC_N
-         READ(STRARRAY(5), '(ES14.0)') GRID_BC(IPG)%ACC_T
-      ELSE IF (STRARRAY(2) == 'react') THEN
-         GRID_BC(IPG)%REACT = .TRUE.
-      ELSE IF (STRARRAY(2) == 'axis') THEN
-         GRID_BC(IPG)%PARTICLE_BC = AXIS
-         ! Needs more info
-      ELSE IF (STRARRAY(2) == 'emit') THEN
-         GRID_BC(IPG)%PARTICLE_BC = EMIT
-         ! Needs more info
-      !!! Field BCs
-      ELSE IF (STRARRAY(2) == 'dirichlet') THEN
-         GRID_BC(IPG)%FIELD_BC = DIRICHLET_BC
-         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%WALL_POTENTIAL
-      ELSE IF (STRARRAY(2) == 'neumann') THEN
-         GRID_BC(IPG)%FIELD_BC = NEUMANN_BC
-         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%WALL_EFIELD
-      ELSE IF (STRARRAY(2) == 'dielectric') THEN
-         GRID_BC(IPG)%FIELD_BC = DIELECTRIC_BC
-      ELSE IF (STRARRAY(2) == 'spicenode') THEN
-         GRID_BC(IPG)%FIELD_BC = SPICE_NODE_BC
-      !!! BCs for both particles and field
-      ELSE IF (STRARRAY(2) == 'periodic_master') THEN
-         GRID_BC(IPG)%PARTICLE_BC = PERIODIC_MASTER
-         GRID_BC(IPG)%FIELD_BC = PERIODIC_SLAVE_BC
-         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%TRANSLATEVEC(1)
-         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%TRANSLATEVEC(2)
-
-         ! DO J = 1, U2D_GRID%NUM_CELLS
-         !    DO K = 1, 3
-         !       IF (U2D_GRID%CELL_EDGES_PG(K, J) == IPG) THEN
-         !          ! This is the periodic edge. Find its corresponding neighbor.
-         !       END IF
-         !    END DO
-         ! END DO
-      ELSE IF (STRARRAY(2) == 'rf_voltage') THEN
-         GRID_BC(IPG)%FIELD_BC = RF_VOLTAGE_BC
-         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%WALL_RF_POTENTIAL
-         READ(STRARRAY(4), '(ES14.0)') GRID_BC(IPG)%WALL_POTENTIAL
-         READ(STRARRAY(5), '(ES14.0)') GRID_BC(IPG)%RF_FREQUENCY
-      ELSE IF (STRARRAY(2) == 'decoupled_rf_voltage') THEN
-         GRID_BC(IPG)%FIELD_BC = DECOUPLED_RF_VOLTAGE_BC
-         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%WALL_RF_POTENTIAL
-         READ(STRARRAY(4), '(ES14.0)') GRID_BC(IPG)%WALL_POTENTIAL
-         READ(STRARRAY(5), '(ES14.0)') GRID_BC(IPG)%RF_FREQUENCY
-         READ(STRARRAY(6), '(ES14.0)') GRID_BC(IPG)%CAPACITANCE
-      ELSE
-         CALL ERROR_ABORT('Error in boundary condition definition.')
-      END IF
-
-
-   END SUBROUTINE DEF_BOUNDARY_CONDITION
 
 
 

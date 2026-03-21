@@ -2,12 +2,22 @@
 #                         MAKEFILE                         #
 ############################################################
 
-CMPF  = gfortran -c -Wall -Wextra
+CMPF  = gfortran -c
 LNK   = gfortran 
 
-OPTS = -g
+OPTS = -O3
 
-OBJS = global_module.o  tools.o  grid.o  pde.o  integration.o
+OBJS = global_module.o  initialization.o  tools.o  grid.o  pde.o  integration.o
+
+######### Debug option
+
+all: hyper2D.exe
+
+debug: CMP += -g
+debug: LNK += -g
+debug: OPTF = -O0 -fimplicit-none -Wall -Wextra -fbacktrace -fcheck=all -ffpe-trap=invalid,zero,overflow
+debug: hyper2D.exe
+
 
 ######### Executable generation by the linker
 
@@ -30,6 +40,9 @@ grid.o:          grid.f03
 
 tools.o:         tools.f03 grid.o pde.o global_module.o
 	$(CMPF) $(OPTS) tools.f03
+
+initialization.o:         initialization.f03 grid.o tools.o global_module.o
+	$(CMPF) $(OPTS) initialization.f03
 
 global_module.o: global_module.f03
 	$(CMPF) $(OPTS) global_module.f03
