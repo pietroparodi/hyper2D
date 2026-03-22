@@ -18,7 +18,7 @@ module pde
 
       real(kind=8), dimension(:,:), intent(inout) :: U
 
-      real(kind=8) :: n0, P0, rho
+      real(kind=8) :: P0, rho
       INTEGER :: I, J
 
       ALLOCATE(U_inlet(N_SPECIES*Neq))
@@ -28,9 +28,8 @@ module pde
       DO I = 1, N_SPECIES
          J = 4*(I-1)
 
-         n0   = 9.657294d19/2.   ! [particles/m^3] number density
-         rho = n0*SPECIES(I)%MOLECULAR_MASS
-         P0   = n0*kB*T0 ! [Pa] gas pressure
+         rho = INITIAL_NRHO*SPECIES(I)%MOLECULAR_MASS
+         P0   = INITIAL_NRHO*kB*INITIAL_TEMP ! [Pa] gas pressure
 
          ! Initialize all cells 
          ! U(J+1,:) = rho0     ! Density
@@ -40,9 +39,9 @@ module pde
 
          ! Initialize all cells 
          U(J+1,:) = rho     ! Density
-         U(J+2,:) = rho*ux0 ! Momentum along x
-         U(J+3,:) = rho*uy0 ! Momentum along y
-         U(J+4,:) = rho*(ux0**2 + uy0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
+         U(J+2,:) = rho*INITIAL_UX ! Momentum along x
+         U(J+3,:) = rho*INITIAL_UY ! Momentum along y
+         U(J+4,:) = rho*(INITIAL_UX**2 + INITIAL_UY**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
 
 
 

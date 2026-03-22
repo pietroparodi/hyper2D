@@ -41,6 +41,13 @@ module global_module
    real(kind=8), parameter :: T0   = 300.0   ! [K]
    real(kind=8), parameter :: Tw   = 300.0   ! [K]
 
+   REAL(KIND=8) :: INITIAL_NRHO = 0.d0
+   REAL(KIND=8) :: INITIAL_UX = 0.d0
+   REAL(KIND=8) :: INITIAL_UY = 0.d0
+   REAL(KIND=8) :: INITIAL_UZ = 0.d0
+   REAL(KIND=8) :: INITIAL_TEMP = 0.d0
+   INTEGER :: INITIAL_MIX_ID
+
    ! Utilities
    real(kind=8) :: invdt_adv, invdt_cond, invdt_diff
 
