@@ -30,16 +30,16 @@ module integration
       real(kind=8), dimension(:,:), ALLOCATABLE :: Uprim
       real(kind=8), dimension(:,:,:), ALLOCATABLE :: gradUprim
 
-      ALLOCATE(F_dot_n_hyper(N_SPECIES*Neq))
-      ALLOCATE(F_dot_n_diff(N_SPECIES*Neq))
+      ALLOCATE(F_dot_n_hyper(N_SPECIES_FLUID*Neq))
+      ALLOCATE(F_dot_n_diff(N_SPECIES_FLUID*Neq))
 
-      ALLOCATE(F_dot_n_wall(N_SPECIES*Neq))
-      ALLOCATE(S(N_SPECIES*Neq))
-      ALLOCATE(Uprim(N_SPECIES*Neq,NCELLS))
-      ALLOCATE(gradUprim(2,N_SPECIES*Neq,NCELLS))
+      ALLOCATE(F_dot_n_wall(N_SPECIES_FLUID*Neq))
+      ALLOCATE(S(N_SPECIES_FLUID*Neq))
+      ALLOCATE(Uprim(N_SPECIES_FLUID*Neq,NCELLS))
+      ALLOCATE(gradUprim(2,N_SPECIES_FLUID*Neq,NCELLS))
 
       DO eleID = 1, NCELLS
-         DO I = 1, N_SPECIES
+         DO I = 1, N_SPECIES_FLUID
             FIRST = (I-1)*Neq+1
             LAST = I*Neq+1
             call compute_primitive_from_conserved(U(FIRST:LAST,eleID), Uprim(FIRST:LAST,eleID), I)
@@ -67,7 +67,7 @@ module integration
             neigh = U2D_GRID%CELL_NEIGHBORS(intID,eleID)
 
             ! Check what neighbor is it
-            DO I = 1, N_SPECIES
+            DO I = 1, N_SPECIES_FLUID
                FIRST = (I-1)*Neq+1
                LAST = I*Neq+1
 
@@ -145,7 +145,7 @@ module integration
 
 
             ! Check that the solution did not diverge
-            do eqID = 1, N_SPECIES*Neq
+            do eqID = 1, N_SPECIES_FLUID*Neq
                if (isnan(U_new(eqID,eleID))) then 
                   print*, 'Solution diverged, try with a smaller time step! Aborting.'
                   print*, 'Solution that diverged: ', U_new(:,eleID)
@@ -192,66 +192,96 @@ module integration
       INTEGER :: FIRST, LAST, RHOI, RHOJ, MOMXI, MOMXJ, MOMYI, MOMYJ, ENEI, ENEJ
       REAL(KIND=8) :: MI, MJ, MIJ, NI, NJ, UXI, UXJ, UYI, UYJ, TI, TJ, TIJ, VTHIJ, S_MOM_IJ, UIDOTW, UJDOTW, S_ENE_IJ, QIJ
 
-      ALLOCATE(prim(N_SPECIES*Neq))
+      ALLOCATE(prim(N_SPECIES_FLUID*Neq))
       S = 0.d0
       
-      DO I = 1, N_SPECIES
+      DO I = 1, N_SPECIES_FLUID
          FIRST = (I-1)*Neq+1
          LAST = I*Neq+1
          call compute_primitive_from_conserved(U(FIRST:LAST), prim(FIRST:LAST), I)
       END DO
 
-      ! DO I = 1, N_SPECIES
-      !    DO J = I+1, N_SPECIES
-      !       RHOI  = (I-1)*Neq+1
-      !       RHOJ  = (J-1)*Neq+1
-      !       MOMXI = (I-1)*Neq+2
-      !       MOMXJ = (J-1)*Neq+2
-      !       MOMYI = (I-1)*Neq+3
-      !       MOMYJ = (J-1)*Neq+3
-      !       ENEI  = (I-1)*Neq+4
-      !       ENEJ  = (J-1)*Neq+4
+      ! Elastic collisions between the different fluids
 
-      !       ! Momentum and energy elastic source terms from [Benilov, Phys. Plasmas 4, 521–528 (1997)]
-      !       ! (in the low-Mach number limit)
+      DO I = 1, N_SPECIES_FLUID
+         DO J = I+1, N_SPECIES_FLUID
+            RHOI  = (I-1)*Neq+1
+            RHOJ  = (J-1)*Neq+1
+            MOMXI = (I-1)*Neq+2
+            MOMXJ = (J-1)*Neq+2
+            MOMYI = (I-1)*Neq+3
+            MOMYJ = (J-1)*Neq+3
+            ENEI  = (I-1)*Neq+4
+            ENEJ  = (J-1)*Neq+4
+
+            ! Momentum and energy elastic source terms from [Benilov, Phys. Plasmas 4, 521–528 (1997)]
+            ! (in the low-Mach number limit)
             
-      !       MI = SPECIES(I)%MOLECULAR_MASS
-      !       MJ = SPECIES(J)%MOLECULAR_MASS
-      !       MIJ = MI*MJ/(MI+MJ)
+            MI = SPECIES(I)%MOLECULAR_MASS
+            MJ = SPECIES(J)%MOLECULAR_MASS
+            MIJ = MI*MJ/(MI+MJ)
 
-      !       NI = prim(RHOI)/MI
-      !       NJ = prim(RHOJ)/MJ
-      !       UXI = prim(MOMXI)
-      !       UXJ = prim(MOMXJ)
-      !       UYI = prim(MOMYI)
-      !       UYJ = prim(MOMYJ)
-      !       TI = prim(ENEI)
-      !       TJ = prim(ENEJ)
-      !       TIJ = (MI*TJ+MJ*TI)/(MI+MJ)
+            NI = prim(RHOI)/MI
+            NJ = prim(RHOJ)/MJ
+            UXI = prim(MOMXI)
+            UXJ = prim(MOMXJ)
+            UYI = prim(MOMYI)
+            UYJ = prim(MOMYJ)
+            TI = prim(ENEI)
+            TJ = prim(ENEJ)
+            TIJ = (MI*TJ+MJ*TI)/(MI+MJ)
 
-      !       VTHIJ = SQRT(8*KB*TIJ/(PI*MIJ))
+            VTHIJ = SQRT(8*KB*TIJ/(PI*MIJ))
 
-      !       QIJ = PI*(0.5*(SPECIES(I)%DIAM + SPECIES(J)%DIAM))**2
+            QIJ = PI*(0.5*(SPECIES(I)%DIAM + SPECIES(J)%DIAM))**2
 
-      !       S_MOM_IJ = 4./3.*MIJ*VTHIJ*QIJ*NI*NJ
-      !       !S(MOMXI) = S(MOMXI) + S_MOM_IJ*( UXJ - UXI )
-      !       !S(MOMXJ) = S(MOMXJ) - S_MOM_IJ*( UXJ - UXI )
-      !       !S(MOMYI) = S(MOMYI) + S_MOM_IJ*( UYJ - UYI )
-      !       !S(MOMYJ) = S(MOMYJ) - S_MOM_IJ*( UYJ - UYI )
+            S_MOM_IJ = 4./3.*MIJ*VTHIJ*QIJ*NI*NJ
+            !S(MOMXI) = S(MOMXI) + S_MOM_IJ*( UXJ - UXI )
+            !S(MOMXJ) = S(MOMXJ) - S_MOM_IJ*( UXJ - UXI )
+            !S(MOMYI) = S(MOMYI) + S_MOM_IJ*( UYJ - UYI )
+            !S(MOMYJ) = S(MOMYJ) - S_MOM_IJ*( UYJ - UYI )
 
-      !       UIDOTW = UXI*(UXI-UXJ) + UYI*(UYI-UYJ)
-      !       UJDOTW = UXJ*(UXI-UXJ) + UYJ*(UYI-UYJ)
-      !       S_ENE_IJ = 4./3.*MIJ/(MI+MJ)*VTHIJ*QIJ*NI*NJ*(3*KB*(TI-TJ) + MI*TJ/TIJ*UIDOTW + MJ*TI/TIJ*UJDOTW)
-      !       !S(ENEI) = S(ENEI) - S_ENE_IJ
-      !       !S(ENEJ) = S(ENEJ) + S_ENE_IJ
+            UIDOTW = UXI*(UXI-UXJ) + UYI*(UYI-UYJ)
+            UJDOTW = UXJ*(UXI-UXJ) + UYJ*(UYI-UYJ)
+            S_ENE_IJ = 4./3.*MIJ/(MI+MJ)*VTHIJ*QIJ*NI*NJ*(3*KB*(TI-TJ) + MI*TJ/TIJ*UIDOTW + MJ*TI/TIJ*UJDOTW)
+            !S(ENEI) = S(ENEI) - S_ENE_IJ
+            !S(ENEJ) = S(ENEJ) + S_ENE_IJ
 
-      !       ! Update stability constraints
-      !       !invdt_adv = MAX(invdt_adv, 4./3.*NI*QIJ*VTHIJ, 4./3.*NJ*QIJ*VTHIJ)
-      !    END DO
-      ! END DO
+            ! Update stability constraints
+            invdt_coll = MAX(invdt_coll, 4./3.*NI*QIJ*VTHIJ, 4./3.*NJ*QIJ*VTHIJ)
+         END DO
+      END DO
+
+      ! Reactions with the background
+
+      DO I = 1, N_SPECIES_FLUID
+         DO J = N_SPECIES_FLUID + 1, N_SPECIES
+            RHOI  = (I-1)*Neq+1
+            MOMXI = (I-1)*Neq+2
+            MOMYI = (I-1)*Neq+3
+            ENEI  = (I-1)*Neq+4
+
+            MI = SPECIES(I)%MOLECULAR_MASS
+            MJ = SPECIES(J)%MOLECULAR_MASS
+            MIJ = MI*MJ/(MI+MJ)
+
+            NI = prim(RHOI)/MI
+            NJ = BG_CELL_NRHO(J,eleID)
+            UXI = prim(MOMXI)
+            UXJ = BG_CELL_VX(J,eleID)
+            UYI = prim(MOMYI)
+            UYJ = BG_CELL_VY(J,eleID)
+            TI = prim(ENEI)
+            TJ = BG_CELL_TEMP(J,eleID)
+            TIJ = (MI*TJ+MJ*TI)/(MI+MJ)
+
+            VTHIJ = SQRT(8*KB*TIJ/(PI*MIJ))
+
+         END DO
+      END DO
 
       IF (AXI) THEN
-         DO I = 1, N_SPECIES
+         DO I = 1, N_SPECIES_FLUID
             RHOI  = (I-1)*Neq+1
             MOMYI = (I-1)*Neq+3
             ENEI  = (I-1)*Neq+4
@@ -286,11 +316,11 @@ module integration
       INTEGER :: JR, I, FIRST, LAST, P1_SP_ID, R_SP_ID
       REAL(KIND=8) :: M, T, rho, ux, uy, udotn, uparsq, Pflux
 
-      ALLOCATE(Ndotout(N_SPECIES))
-      ALLOCATE(Ndotin(N_SPECIES))
+      ALLOCATE(Ndotout(N_SPECIES_FLUID))
+      ALLOCATE(Ndotin(N_SPECIES_FLUID))
       
       ! Compute exiting particle flux
-      DO I = 1, N_SPECIES
+      DO I = 1, N_SPECIES_FLUID
          FIRST = (I-1)*Neq+1
          LAST = I*Neq+1
 
@@ -313,7 +343,7 @@ module integration
       END DO
 
       ! Compute mass, momentum, and energy flux vector
-      DO I = 1, N_SPECIES
+      DO I = 1, N_SPECIES_FLUID
          FIRST = (I-1)*Neq+1
          LAST = I*Neq+1
          CALL compute_primitive_from_conserved(U(FIRST:LAST), prim, I)
@@ -357,7 +387,7 @@ module integration
       real(kind=8), dimension(Neq) :: F_L, F_R
 
       ! Wave speeds
-      real(kind=8) :: ws_min_L, ws_max_L, ws_min_R, ws_max_R, ws_max, ws_min
+      real(kind=8) :: ws_min_L, ws_max_L, ws_min_R, ws_max_R, ws_max
 
       call compute_flux_ws(U_L, F_L, nx, ny, ws_max_L, ws_min_L, SP_ID)
       call compute_flux_ws(U_R, F_R, nx, ny, ws_max_R, ws_min_R, SP_ID)
@@ -796,8 +826,8 @@ module integration
 
       ! Compute gradient in each cell from nodal values
       gradU = 0.d0
-      ALLOCATE(Uface(N_SPECIES*Neq))
-      ALLOCATE(U_adj(N_SPECIES*Neq))
+      ALLOCATE(Uface(N_SPECIES_FLUID*Neq))
+      ALLOCATE(U_adj(N_SPECIES_FLUID*Neq))
 
       DO I = 1, NCELLS
          ONAXIS = .FALSE.
@@ -815,7 +845,7 @@ module integration
             else
                FACE_PG = U2D_GRID%CELL_EDGES_PG(J,I)
                if (GRID_BC(FACE_PG)%PARTICLE_BC == STATE) then ! ++++++++ GENERIC BOUNDARY +++++++++++++++++++
-                  DO SP_ID = 1, N_SPECIES
+                  DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq+1
                      CALL compute_primitive_from_conserved(GRID_BC(FACE_PG)%U_BOUND(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
@@ -823,7 +853,7 @@ module integration
                   Uface = 0.5*(U(:,I) + U_adj)
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL BOUNDARY ++++++++++++++++++++
                   U_adj = U(:,I)
-                  DO SP_ID = 1, N_SPECIES
+                  DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq+1
                      U_adj(FIRST+1) = 0.d0
@@ -835,7 +865,7 @@ module integration
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
                   ONAXIS = .TRUE.
                   U_adj = U(:,I)
-                  DO SP_ID = 1, N_SPECIES
+                  DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq+1
                      U_adj(FIRST+1) = U(FIRST+1,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*nx
@@ -887,8 +917,8 @@ module integration
 
       ! Compute gradient in each cell from nodal values
       gradU = 0.d0
-      ALLOCATE(Uface(N_SPECIES*Neq))
-      ALLOCATE(U_adj(N_SPECIES*Neq))
+      ALLOCATE(Uface(N_SPECIES_FLUID*Neq))
+      ALLOCATE(U_adj(N_SPECIES_FLUID*Neq))
 
       DO I = 1, NCELLS
          ONAXIS = .FALSE.
@@ -906,7 +936,7 @@ module integration
             else
                FACE_PG = U2D_GRID%CELL_EDGES_PG(J,I)
                if (GRID_BC(FACE_PG)%PARTICLE_BC == STATE) then ! ++++++++ GENERIC BOUNDARY +++++++++++++++++++
-                  DO SP_ID = 1, N_SPECIES
+                  DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq+1
                      CALL compute_primitive_from_conserved(GRID_BC(FACE_PG)%U_BOUND(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
@@ -914,7 +944,7 @@ module integration
                   Uface = 0.5*(U(:,I) + U_adj)
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL NO-SLIP BOUNDARY ++++++++++++++++++++
                   U_adj = U(:,I)
-                  DO SP_ID = 1, N_SPECIES
+                  DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq+1
                      U_adj(FIRST+1) = 0.d0
@@ -926,7 +956,7 @@ module integration
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
                   ONAXIS = .TRUE.
                   U_adj = U(:,I)
-                  DO SP_ID = 1, N_SPECIES
+                  DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq+1
                      U_adj(FIRST+1) = U(FIRST+1,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*nx

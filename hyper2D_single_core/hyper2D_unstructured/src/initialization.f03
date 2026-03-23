@@ -73,6 +73,11 @@ MODULE initialization
          IF (line=='Max_timestep:')            READ(in1,*) dtmax
          IF (line=='Target_CFL:')              READ(in1,*) CFL_target
          IF (line=='Stats_every:')             READ(in1,*) STATS_EVERY
+         IF (line=='Number_fluid_species:') THEN
+            READ(in1,*) N_SPECIES_FLUID
+            IF (N_SPECIES_FLUID > N_SPECIES) CALL ERROR_ABORT( &
+            'Error! The requested number of fluid species is larger than the number of loaded species.')
+         END IF
          
          ! ~~~~~~~~~~~~~  File output ~~~~~~~~~~~~~~~
 
@@ -493,7 +498,7 @@ MODULE initialization
          READ(STRARRAY(7), '(ES14.0)') GRID_BC(IPG)%UZ
          READ(STRARRAY(8), '(ES14.0)') GRID_BC(IPG)%TEMP
 
-         ALLOCATE(GRID_BC(IPG)%U_BOUND(N_SPECIES*Neq))
+         ALLOCATE(GRID_BC(IPG)%U_BOUND(N_SPECIES_FLUID*Neq))
          GRID_BC(IPG)%U_BOUND = 0.d0
          DO I = 1, MIXTURES(GRID_BC(IPG)%MIX_ID)%N_COMPONENTS
             SP_ID = MIXTURES(GRID_BC(IPG)%MIX_ID)%COMPONENTS(I)%ID

@@ -36,7 +36,7 @@ program hyper2D
    CALL READINPUT()
 
    write(*,*) "Initializing solution..."
-   allocate(U(N_SPECIES*Neq,NCELLS), U_new(N_SPECIES*Neq,NCELLS))
+   allocate(U(N_SPECIES_FLUID*Neq,NCELLS), U_new(N_SPECIES_FLUID*Neq,NCELLS))
    call initialize_solution(U) ! See the pde.f03 module
    
    write(*,*) "Writing solution at time step", 0, "..."
@@ -61,6 +61,7 @@ program hyper2D
       invdt_adv = 0.0 ! Global variable, init to zero
       invdt_cond = 0.0
       invdt_diff = 0.0
+      invdt_coll = 0.0
 
       ! ------ Integrate by dt ------
       call forward_Euler_step(U, U_new, dt)
@@ -73,11 +74,12 @@ program hyper2D
       end if
 
       ! ------ Estimate current Courant number and update time step -----
-      CFL_now = MAX(invdt_adv,invdt_cond, invdt_diff)*dt
+      CFL_now = MAX(invdt_adv,invdt_cond, invdt_diff, invdt_coll)*dt
       IF ( mod(t_ID, STATS_EVERY) .EQ. 0 ) THEN
          write(*,'(A,EN15.5,A,F10.5,A,ES14.7,A,A,F10.5,A,F10.5,A,F10.5)') 'Time', t_now, &
          ' [s]. Current CFL: ', CFL_now, '. dt = ', dt, '[s]', &
-         ' CFL Advection: ', invdt_adv*dt, ' CFL Conduction: ', invdt_cond*dt, ' CFL Diffusion: ', invdt_diff*dt
+         ' CFL Advection: ', invdt_adv*dt, ' CFL Conduction: ', invdt_cond*dt, &
+         ' CFL Diffusion: ', invdt_diff*dt, ' CFL Collisions: ', invdt_coll*dt
       END IF
       dt = MIN(dt*CFL_target/CFL_now, dtmax)
 

@@ -35,10 +35,10 @@ module tools
 
       character(len=20), dimension(:), allocatable :: prim_names
 
-      ALLOCATE(prim_names(N_SPECIES*Neq))
+      ALLOCATE(prim_names(N_SPECIES_FLUID*Neq))
 
 
-      DO I = 1, N_SPECIES
+      DO I = 1, N_SPECIES_FLUID
          J = 4*(I-1)
          prim_names(J+1) = 'rho_'//TRIM(SPECIES(I)%NAME)
          prim_names(J+2) = 'ux_'//TRIM(SPECIES(I)%NAME)
@@ -48,11 +48,11 @@ module tools
 
       ! ----- Compute primitive variables on the grid ------
 
-      allocate(prim(N_SPECIES*Neq,NCELLS))
+      allocate(prim(N_SPECIES_FLUID*Neq,NCELLS))
 
       prim = 0.0 ! Init
       do IC = 1, NCELLS
-         DO I = 1, N_SPECIES
+         DO I = 1, N_SPECIES_FLUID
             call compute_primitive_from_conserved(U((I-1)*Neq+1:I*Neq+1,IC), prim((I-1)*Neq+1:I*Neq+1,IC), I)
          END DO
       end do
@@ -94,11 +94,11 @@ module tools
 
          WRITE(54321) 'CELL_DATA '//ITOA(NCELLS)//ACHAR(10)
 
-         WRITE(54321) 'FIELD FieldData '//ITOA( N_SPECIES*Neq )//ACHAR(10)
+         WRITE(54321) 'FIELD FieldData '//ITOA( N_SPECIES_FLUID*Neq )//ACHAR(10)
 
 
          ! Write per-cell value
-         DO eqID = 1, N_SPECIES*Neq
+         DO eqID = 1, N_SPECIES_FLUID*Neq
 
             WRITE(54321) prim_names(eqID)//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
             WRITE(54321) prim(eqID,:), ACHAR(10)
@@ -138,12 +138,12 @@ module tools
  
          
          WRITE(54321,'(A,I10)') 'CELL_DATA', NCELLS
-         WRITE(54321,'(A,I10)') 'FIELD FieldData', N_SPECIES*Neq
+         WRITE(54321,'(A,I10)') 'FIELD FieldData', N_SPECIES_FLUID*Neq
 
 
 
          ! Write per-cell value
-         DO eqID = 1, N_SPECIES*Neq
+         DO eqID = 1, N_SPECIES_FLUID*Neq
             
             WRITE(54321,'(A,I10,I10,A8)') prim_names(eqID), 1, NCELLS, 'integer'
             WRITE(54321) prim(eqID,:)

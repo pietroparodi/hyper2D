@@ -45,12 +45,11 @@ module global_module
    INTEGER :: INITIAL_MIX_ID
 
 
-   INTEGER :: FLUID_MIX_ID
    INTEGER :: N_SPECIES_FLUID = 0
 
 
    ! Utilities
-   real(kind=8) :: invdt_adv, invdt_cond, invdt_diff
+   real(kind=8) :: invdt_adv, invdt_cond, invdt_diff, invdt_coll
 
 
    REAL(KIND=8) :: BG_DENS
