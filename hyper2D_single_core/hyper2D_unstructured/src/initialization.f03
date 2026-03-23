@@ -24,7 +24,7 @@ MODULE initialization
 
       CHARACTER*512      :: MIXTURE_DEFINITION, VSS_PARAMS_FILENAME, BG_FILENAME
       CHARACTER*512      :: BC_DEFINITION, SPECIES_FILENAME
-      CHARACTER*64       :: BG_MIX_NAME
+      CHARACTER*64       :: BG_MIX_NAME, FLUX_FUNCTION_STRING
 
       ! Open input file for reading
       OPEN(UNIT=in1,FILE='input', STATUS='old',IOSTAT=ios)
@@ -101,9 +101,9 @@ MODULE initialization
             READ(in1,*) BG_MIX_NAME
             BG_MIX = MIXTURE_NAME_TO_ID(BG_MIX_NAME)
          END IF
-         IF (line=='MCC_background_file:') THEN
+         IF (line=='Background_file:') THEN
             READ(in1,*) BG_FILENAME
-            CALL READ_MCC_BACKGROUND_FILE(BG_FILENAME)
+            CALL READ_BACKGROUND_FILE(BG_FILENAME)
          END IF
 
          IF (line=='VSS_parameters_file:')     THEN
@@ -126,6 +126,18 @@ MODULE initialization
          IF (line=='Initial_state:') THEN
             READ(in1,'(A)') BC_DEFINITION
             CALL DEF_INITIAL_STATE(BC_DEFINITION)
+         END IF
+
+
+         IF (line=='Flux_function:') THEN
+            READ(in1,*) FLUX_FUNCTION_STRING
+            IF (FLUX_FUNCTION_STRING == "AUSM") THEN
+               FLUX_FUNCTION = AUSM
+            ELSE IF (FLUX_FUNCTION_STRING == "HLL") THEN
+               FLUX_FUNCTION = HLL
+            ELSE
+               CALL ERROR_ABORT('Specified flux function in input file does not exist.')
+            END IF
          END IF
 
       END DO ! Loop for reading input file
@@ -248,7 +260,7 @@ MODULE initialization
       INTEGER            :: ReasonEOF, ReasonEOFCS
 
       CHARACTER(LEN=80)   :: DEFINITION
-      INTEGER :: N_STR, index
+      INTEGER :: N_STR
       CHARACTER(LEN=80), ALLOCATABLE :: STRARRAY(:)
       TYPE(REACTIONS_DATA_STRUCTURE) :: NEW_REACTION
       INTEGER :: I, NROWS
@@ -452,9 +464,11 @@ MODULE initialization
 
       CHARACTER(LEN=*), INTENT(IN) :: DEFINITION
 
-      INTEGER :: N_STR, I, IPG
+      INTEGER :: N_STR, I, IPG, SP_ID, FIRST, LAST
       CHARACTER(LEN=80), ALLOCATABLE :: STRARRAY(:)
       CHARACTER(LEN=64) :: MIX_NAME
+      REAL(KIND=8), DIMENSION(Neq) :: U_BOUND_PRIM
+      REAL(KIND=8) :: FRAC
 
 
       CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
@@ -478,7 +492,21 @@ MODULE initialization
          READ(STRARRAY(6), '(ES14.0)') GRID_BC(IPG)%UY
          READ(STRARRAY(7), '(ES14.0)') GRID_BC(IPG)%UZ
          READ(STRARRAY(8), '(ES14.0)') GRID_BC(IPG)%TEMP
+
          ALLOCATE(GRID_BC(IPG)%U_BOUND(N_SPECIES*Neq))
+         GRID_BC(IPG)%U_BOUND = 0.d0
+         DO I = 1, MIXTURES(GRID_BC(IPG)%MIX_ID)%N_COMPONENTS
+            SP_ID = MIXTURES(GRID_BC(IPG)%MIX_ID)%COMPONENTS(I)%ID
+            FIRST = (SP_ID-1)*Neq+1
+            LAST = SP_ID*Neq+1
+
+            FRAC = MIXTURES(GRID_BC(IPG)%MIX_ID)%COMPONENTS(I)%MOLFRAC
+            U_BOUND_PRIM(1) = FRAC*GRID_BC(IPG)%NRHO*SPECIES(SP_ID)%MOLECULAR_MASS
+            U_BOUND_PRIM(2) = U_BOUND_PRIM(1)*GRID_BC(IPG)%UX
+            U_BOUND_PRIM(3) = U_BOUND_PRIM(1)*GRID_BC(IPG)%UY
+            U_BOUND_PRIM(4) = GRID_BC(IPG)%TEMP
+            CALL compute_primitive_from_conserved(U_BOUND_PRIM, GRID_BC(IPG)%U_BOUND(FIRST:LAST), SP_ID)
+         END DO
       ELSE IF (STRARRAY(2) == 'wall') THEN
          GRID_BC(IPG)%PARTICLE_BC = WALL
       ELSE IF (STRARRAY(2) == 'symmetry') THEN
@@ -523,9 +551,6 @@ MODULE initialization
          CALL ERROR_ABORT('Error in boundary condition definition.')
       END IF
 
-      READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%EPS_REL
-
-
    END SUBROUTINE DEF_DOMAIN_TYPE
 
 
@@ -544,13 +569,10 @@ MODULE initialization
       CHARACTER*10 :: NAME
       REAL(KIND=8) :: MOLWT
       REAL(KIND=8) :: MOLECULAR_MASS
-      INTEGER      :: ROTDOF
-      REAL(KIND=8) :: ROTREL
-      INTEGER      :: VIBDOF
-      REAL(KIND=8) :: VIBREL
-      REAL(KIND=8) :: VIBTEMP
-      REAL(KIND=8) :: SPWT
-      REAL(KIND=8) :: CHARGE
+      REAL(KIND=8) :: DIAM
+      REAL(KIND=8) :: GAMMA
+      REAL(KIND=8) :: KAPPA
+      REAL(KIND=8) :: MU
 
    
       ! Open input file for reading
@@ -575,7 +597,7 @@ MODULE initialization
          
          !READ(line,'(A2, ES14.3, ES14.3, I1, ES14.3, I1, ES14.3, ES14.3, ES14.3, ES14.3)') &
          READ(line,*) &
-         NAME, MOLWT, MOLECULAR_MASS, ROTDOF, ROTREL, VIBDOF, VIBREL, VIBTEMP, SPWT, CHARGE
+         NAME, MOLWT, MOLECULAR_MASS, DIAM, GAMMA, KAPPA, MU
       
          IF (ALLOCATED(SPECIES)) THEN
             ALLOCATE(TEMP_SPECIES(N_SPECIES+1)) ! Append the species to the list
@@ -588,10 +610,11 @@ MODULE initialization
 
          SPECIES(N_SPECIES)%NAME = NAME
          SPECIES(N_SPECIES)%MOLECULAR_MASS = MOLECULAR_MASS
-
-         IF (SPWT .LT. 1.d0) THEN
-            CALL ERROR_ABORT('Attention, Species specific particle weight must be >= 1! ABORTING.')
-         ENDIF
+         SPECIES(N_SPECIES)%DIAM = DIAM
+         SPECIES(N_SPECIES)%GAMMA = GAMMA
+         SPECIES(N_SPECIES)%KAPPA = KAPPA
+         SPECIES(N_SPECIES)%MU = MU
+         SPECIES(N_SPECIES)%CP = GAMMA/(GAMMA-1)*KB/MOLECULAR_MASS
 
       END DO
 
@@ -651,18 +674,47 @@ MODULE initialization
    END SUBROUTINE DEF_MIXTURE
 
 
+   !=============================================================
+   ! Helper routine to read ASCII lines from stream file
+   !=============================================================
+   logical function read_line(unit, line)
+      integer, intent(in) :: unit
+      character(len=*), intent(out) :: line
+      integer :: ios
+      character(len=1) :: ch
+      integer :: i
+
+      line = ''
+      i = 1
+
+      do
+         read(unit, iostat=ios) ch
+         if (ios /= 0) then
+            read_line = .false.
+            return
+         end if
+
+         if (ch == new_line('a')) exit
+         if (i <= len(line)) then
+            line(i:i) = ch
+            i = i + 1
+         end if
+      end do
+
+      read_line = .true.
+   end function read_line
 
 
-   SUBROUTINE READ_MCC_BACKGROUND_FILE(FILENAME)
+   SUBROUTINE READ_BACKGROUND_FILE(FILENAME)
 
       IMPLICIT NONE
 
       CHARACTER*512, INTENT(IN) :: FILENAME
-      CHARACTER*80      :: line
+      CHARACTER*30       :: line
       INTEGER, PARAMETER :: in5 = 5557
       INTEGER            :: ios
       INTEGER            :: ReasonEOF
-      INTEGER            :: N_STR, SP_ID, STAT
+      INTEGER            :: N_STR, SP_ID
       CHARACTER(LEN=80), ALLOCATABLE :: STRARRAY(:)
 
       ! Open input file for reading
@@ -679,46 +731,71 @@ MODULE initialization
       END IF
 
       ALLOCATE(BG_CELL_NRHO(N_SPECIES, NCELLS))
+      ALLOCATE(BG_CELL_TEMP(N_SPECIES, NCELLS))
+      ALLOCATE(BG_CELL_VX(N_SPECIES, NCELLS))
+      ALLOCATE(BG_CELL_VY(N_SPECIES, NCELLS))
+      ALLOCATE(BG_CELL_VZ(N_SPECIES, NCELLS))
 
       ! ++++++++ Read until the end of file ++++++++
-      IF (BOOL_BINARY_OUTPUT) THEN
-         DO
-            CALL SKIP_TO(in5, 'nrho_mean_', STAT)
-
+ 
+      DO
+         IF (BOOL_BINARY_OUTPUT) THEN
+            IF (.NOT. READ_LINE(in5, line)) EXIT
+         ELSE
             READ(in5, IOSTAT=ReasonEOF) line ! Read line
             IF (ReasonEOF < 0) EXIT ! End of file reached
+         END IF
+      
+         CALL SPLIT_STR(line, ' ', STRARRAY, N_STR)
 
-            SP_ID = SPECIES_NAME_TO_ID(line)
+         IF (STRARRAY(1)(1:10) == 'nrho_mean_') THEN
+            SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1)(11:))
             IF (SP_ID == -1) CALL ERROR_ABORT('Error! Species in MCC background vtk file not found.')
-
-            WRITE(*,*) 'Found data for species ', SP_ID
-            CALL SKIP_TO(in5, ACHAR(10), STAT)
-
+            WRITE(*,*) 'Found n data for species ', SP_ID
             READ(in5, IOSTAT=ReasonEOF) BG_CELL_NRHO(SP_ID, :)
             IF (ReasonEOF < 0) EXIT ! End of file reached
-         END DO ! Loop for reading input file
-      ELSE
-         DO
-            READ(in5, IOSTAT=ReasonEOF) line ! Read line
-            CALL SPLIT_STR(line, ' ', STRARRAY, N_STR)
-            IF (STRARRAY(1)(1:10) == 'nrho_mean_') THEN
-               SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1)(11:))
-               IF (SP_ID == -1) CALL ERROR_ABORT('Error! Species in MCC background vtk file not found.')
+         END IF
 
-               WRITE(*,*) 'Found data for species ', SP_ID
-               READ(in5, IOSTAT=ReasonEOF) BG_CELL_NRHO(SP_ID, :)
-               IF (ReasonEOF < 0) EXIT ! End of file reached
-            END IF
-         END DO
-      END IF
+         IF (STRARRAY(1)(1:9) == 'Ttr_mean_') THEN
+            SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1)(10:))
+            IF (SP_ID == -1) CALL ERROR_ABORT('Error! Species in MCC background vtk file not found.')
+            WRITE(*,*) 'Found T data for species ', SP_ID
+            READ(in5, IOSTAT=ReasonEOF) BG_CELL_TEMP(SP_ID, :)
+            IF (ReasonEOF < 0) EXIT ! End of file reached
+         END IF
+
+         IF (STRARRAY(1)(1:8) == 'vx_mean_') THEN
+            SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1)(9:))
+            IF (SP_ID == -1) CALL ERROR_ABORT('Error! Species in MCC background vtk file not found.')
+            WRITE(*,*) 'Found vx data for species ', SP_ID
+            READ(in5, IOSTAT=ReasonEOF) BG_CELL_VX(SP_ID, :)
+            IF (ReasonEOF < 0) EXIT ! End of file reached
+         END IF
+
+         IF (STRARRAY(1)(1:8) == 'vy_mean_') THEN
+            SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1)(9:))
+            IF (SP_ID == -1) CALL ERROR_ABORT('Error! Species in MCC background vtk file not found.')
+            WRITE(*,*) 'Found vy data for species ', SP_ID
+            READ(in5, IOSTAT=ReasonEOF) BG_CELL_VY(SP_ID, :)
+            IF (ReasonEOF < 0) EXIT ! End of file reached
+         END IF
+
+         IF (STRARRAY(1)(1:8) == 'vz_mean_') THEN
+            SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1)(9:))
+            IF (SP_ID == -1) CALL ERROR_ABORT('Error! Species in MCC background vtk file not found.')
+            WRITE(*,*) 'Found vz data for species ', SP_ID
+            READ(in5, IOSTAT=ReasonEOF) BG_CELL_VZ(SP_ID, :)
+            IF (ReasonEOF < 0) EXIT ! End of file reached
+         END IF
+      END DO
 
       CLOSE(in5) ! Close input file
 
-      BOOL_BG_DENSITY_FILE = .TRUE.
+      BOOL_BG_FILE = .TRUE.
 
       WRITE(*,*) 'Done reading.'
 
-   END SUBROUTINE READ_MCC_BACKGROUND_FILE
+   END SUBROUTINE READ_BACKGROUND_FILE
 
 
 

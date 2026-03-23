@@ -154,7 +154,7 @@ module grid
       REAL(KIND=8) :: DX1, DX2, DX3, DY1, DY2, DY3, XP, YP, W1, W2, W3
 
       ! Open input file for reading
-      OPEN(UNIT=in5,FILE='testgrid.su2', STATUS='old',IOSTAT=ios)
+      OPEN(UNIT=in5,FILE=FILENAME, STATUS='old',IOSTAT=ios)
 
       IF (ios .NE. 0) THEN
          CALL ERROR_ABORT('Attention, mesh file not found! ABORTING.')

@@ -81,11 +81,8 @@ module integration
                else
                   dLR = SQRT(Acell)
                   FACE_PG = U2D_GRID%CELL_EDGES_PG(intID,eleID)
-                  if (GRID_BC(FACE_PG)%PARTICLE_BC == INLET) then ! ++++++++ INLET BOUNDARY +++++++++++++++++++
-                     U_neigh = U_inlet(FIRST:LAST)
-                     gradUprim_neigh = gradUprim(:,FIRST:LAST,eleID)
-                  else if (GRID_BC(FACE_PG)%PARTICLE_BC == OUTLET) then ! ++++++++ OUTLET BOUNDARY +++++++++++++++++++
-                     U_neigh = U_outlet(FIRST:LAST)
+                  if (GRID_BC(FACE_PG)%PARTICLE_BC == STATE) then ! ++++++++ GENERIC BOUNDARY +++++++++++++++++++
+                     U_neigh = GRID_BC(FACE_PG)%U_BOUND(FIRST:LAST)
                      gradUprim_neigh = gradUprim(:,FIRST:LAST,eleID)
                   else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL BOUNDARY ++++++++++++++++++++
                      call compute_wall_state(U(FIRST:LAST,eleID), &
@@ -105,8 +102,16 @@ module integration
                   end if
                end if
 
-               call compute_fluxes_AUSMplusup(U(FIRST:LAST,eleID), U_neigh, &
-               nx, ny, F_dot_n_hyper(FIRST:LAST), Acell, I)
+               IF (FLUX_FUNCTION == AUSM) THEN
+                  call compute_fluxes_AUSMplusup(U(FIRST:LAST,eleID), U_neigh, &
+                  nx, ny, F_dot_n_hyper(FIRST:LAST), Acell, I)
+               ELSE IF (FLUX_FUNCTION == HLL) THEN
+                  call compute_fluxes_HLL(U(FIRST:LAST,eleID), U_neigh, &
+                  nx, ny, F_dot_n_hyper(FIRST:LAST), Acell, I)
+               ELSE
+                  CALL ERROR_ABORT('Error! Flux function not available.')
+               END IF
+
                call compute_fluxes_diffusive(U(FIRST:LAST,eleID), U_neigh, &
                gradUprim(:,FIRST:LAST,eleID), gradUprim_neigh, &
                nx, ny, F_dot_n_diff(FIRST:LAST), Acell, dLR, I)
@@ -809,18 +814,11 @@ module integration
 
             else
                FACE_PG = U2D_GRID%CELL_EDGES_PG(J,I)
-               if (GRID_BC(FACE_PG)%PARTICLE_BC == INLET) then ! ++++++++ INLET BOUNDARY +++++++++++++++++++
+               if (GRID_BC(FACE_PG)%PARTICLE_BC == STATE) then ! ++++++++ GENERIC BOUNDARY +++++++++++++++++++
                   DO SP_ID = 1, N_SPECIES
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq+1
-                     call compute_primitive_from_conserved(U_inlet(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
-                  END DO
-                  Uface = 0.5*(U(:,I) + U_adj)
-               else if (GRID_BC(FACE_PG)%PARTICLE_BC == OUTLET) then ! ++++++++ OUTLET BOUNDARY +++++++++++++++++++
-                  DO SP_ID = 1, N_SPECIES
-                     FIRST = (SP_ID-1)*Neq+1
-                     LAST = SP_ID*Neq+1
-                     call compute_primitive_from_conserved(U_outlet(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
+                     CALL compute_primitive_from_conserved(GRID_BC(FACE_PG)%U_BOUND(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
                   END DO
                   Uface = 0.5*(U(:,I) + U_adj)
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL BOUNDARY ++++++++++++++++++++
@@ -869,7 +867,7 @@ module integration
 
    subroutine compute_cell_centered_gradients_weighted_least_squares(U, gradU)
 
-      ! This subroutine computes cell-centered gradients using the 
+      ! This subroutine computes cell-centered gradients of the primitive variables using the 
       ! weighted-least-squares method of White [https://doi.org/10.2514/6.2019-0127]
       ! Coefficients for the least-squares solution are precomputed and stored in the
       ! matrix LSTSQ_COEFFS after the mesh is read.
@@ -907,21 +905,14 @@ module integration
 
             else
                FACE_PG = U2D_GRID%CELL_EDGES_PG(J,I)
-               if (GRID_BC(FACE_PG)%PARTICLE_BC == INLET) then ! ++++++++ INLET BOUNDARY +++++++++++++++++++
+               if (GRID_BC(FACE_PG)%PARTICLE_BC == STATE) then ! ++++++++ GENERIC BOUNDARY +++++++++++++++++++
                   DO SP_ID = 1, N_SPECIES
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq+1
-                     call compute_primitive_from_conserved(U_inlet(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
+                     CALL compute_primitive_from_conserved(GRID_BC(FACE_PG)%U_BOUND(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
                   END DO
                   Uface = 0.5*(U(:,I) + U_adj)
-               else if (GRID_BC(FACE_PG)%PARTICLE_BC == OUTLET) then ! ++++++++ OUTLET BOUNDARY +++++++++++++++++++
-                  DO SP_ID = 1, N_SPECIES
-                     FIRST = (SP_ID-1)*Neq+1
-                     LAST = SP_ID*Neq+1
-                     call compute_primitive_from_conserved(U_outlet(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
-                  END DO
-                  Uface = 0.5*(U(:,I) + U_adj)
-               else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL BOUNDARY ++++++++++++++++++++
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL NO-SLIP BOUNDARY ++++++++++++++++++++
                   U_adj = U(:,I)
                   DO SP_ID = 1, N_SPECIES
                      FIRST = (SP_ID-1)*Neq+1

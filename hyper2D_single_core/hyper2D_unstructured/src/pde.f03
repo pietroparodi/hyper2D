@@ -5,9 +5,6 @@ module pde
 
    implicit none
 
-   ! Supported boundary conditions
-   real(kind=8), dimension(:), ALLOCATABLE :: U_inlet, U_outlet
-
    contains
 
    ! ============================================================
@@ -18,65 +15,27 @@ module pde
 
       real(kind=8), dimension(:,:), intent(inout) :: U
 
-      real(kind=8) :: P0, rho
-      INTEGER :: I, J
-
-      ALLOCATE(U_inlet(N_SPECIES*Neq))
-      ALLOCATE(U_outlet(N_SPECIES*Neq))
+      real(kind=8) :: P0, rho, FRAC
+      INTEGER :: I, J, SP_ID
 
 
-      DO I = 1, N_SPECIES
-         J = 4*(I-1)
+      DO I = 1, MIXTURES(INITIAL_MIX_ID)%N_COMPONENTS
+         SP_ID = MIXTURES(INITIAL_MIX_ID)%COMPONENTS(I)%ID
+         J = (SP_ID-1)*Neq
 
-         rho = INITIAL_NRHO*SPECIES(I)%MOLECULAR_MASS
-         P0   = INITIAL_NRHO*kB*INITIAL_TEMP ! [Pa] gas pressure
+         FRAC = MIXTURES(INITIAL_MIX_ID)%COMPONENTS(I)%MOLFRAC
 
-         ! Initialize all cells 
-         ! U(J+1,:) = rho0     ! Density
-         ! U(J+2,:) = rho0*0 ! Momentum along x
-         ! U(J+3,:) = rho0*0 ! Momentum along y
-         ! U(J+4,:) = rho0*(0**2 + 0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
+         rho = INITIAL_NRHO*FRAC*SPECIES(SP_ID)%MOLECULAR_MASS
+         P0   = INITIAL_NRHO*FRAC*kB*INITIAL_TEMP ! [Pa] gas pressure
 
          ! Initialize all cells 
          U(J+1,:) = rho     ! Density
          U(J+2,:) = rho*INITIAL_UX ! Momentum along x
          U(J+3,:) = rho*INITIAL_UY ! Momentum along y
-         U(J+4,:) = rho*(INITIAL_UX**2 + INITIAL_UY**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
+         U(J+4,:) = rho*(INITIAL_UX**2 + INITIAL_UY**2)/2.0 + P0/(SPECIES(SP_ID)%GAMMA-1.0) ! total energy
 
-
-
-
-         ! do i = 1, Nele
-         !   if ( (ele_geom(i,2) .le. 0.4) ) then !  .and. (ele_geom(i,2) .le. 0.5) ) then ! xC
-         !     ! if ( (ele_geom(i,3) .ge. 0.3) .and. (ele_geom(i,3) .le. 0.4) ) then ! yC
-
-         !       U(1,i) = 5.0*rho0     ! Density
-         !       U(2,i) = rho0*ux0 ! Momentum along x
-         !       U(3,i) = rho0*uy0 ! Momentum along y
-         !       U(4,i) = rho0*(ux0**2 + uy0**2)/2.0 + 5.0*P0/(gam-1.0) ! total energy
-
-         !     ! end if
-         !   end if
-         ! end do 
-
-         ! ----------- Also initialize BCs -----------------
-
-         U_inlet(J+1) = rho0     ! Density
-         U_inlet(J+2) = rho0*ux0 ! Momentum along x
-         U_inlet(J+3) = rho0*uy0 ! Momentum along y
-         U_inlet(J+4) = rho0*(ux0**2 + uy0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
-
-
-
-         U_outlet(J+1) = rho0     ! Density
-         U_outlet(J+2) = rho0*ux0 ! Momentum along x
-         U_outlet(J+3) = rho0*uy0 ! Momentum along y
-         U_outlet(J+4) = rho0*(ux0**2 + uy0**2)/2.0 + P0/(SPECIES(I)%GAMMA-1.0) ! total energy
-      
       END DO
 
-
-      ! U_sym and U_wall are assigned during run time
 
    end subroutine 
 

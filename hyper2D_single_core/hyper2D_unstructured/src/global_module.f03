@@ -34,11 +34,7 @@ module global_module
    !!!! TEST TEST TEST !!! ! integer, parameter :: reconstr_order = 0 ! 0: no reconstruction -> first order in space
    !!!! TEST TEST TEST !!! integer, parameter :: reconstr_order = 1 ! 1: linear reconstruction -> second order in space
 
-   ! Free stream
-   real(kind=8), parameter :: rho0 = 100.0*254.0*1.660539e-27 * 0.4/(1.380649d-23*300.0)   ! [kg/m3]
-   real(kind=8), parameter :: ux0  = 0.0    ! [m/s]
-   real(kind=8), parameter :: uy0  = 0.0  ! [m/s]
-   real(kind=8), parameter :: T0   = 300.0   ! [K]
+   ! Wall temperature
    real(kind=8), parameter :: Tw   = 300.0   ! [K]
 
    REAL(KIND=8) :: INITIAL_NRHO = 0.d0
@@ -48,6 +44,11 @@ module global_module
    REAL(KIND=8) :: INITIAL_TEMP = 0.d0
    INTEGER :: INITIAL_MIX_ID
 
+
+   INTEGER :: FLUID_MIX_ID
+   INTEGER :: N_SPECIES_FLUID = 0
+
+
    ! Utilities
    real(kind=8) :: invdt_adv, invdt_cond, invdt_diff
 
@@ -55,8 +56,12 @@ module global_module
    REAL(KIND=8) :: BG_DENS
    REAL(KIND=8) :: BG_TEMP
    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: BG_CELL_NRHO
+   REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: BG_CELL_VX
+   REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: BG_CELL_VY
+   REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: BG_CELL_VZ
+   REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: BG_CELL_TEMP
    INTEGER :: BG_MIX
-   LOGICAL      :: BOOL_BG_DENSITY_FILE
+   LOGICAL      :: BOOL_BG_FILE
 
    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: VSS_GREFS ! Matrix of reference relative velocities for VSS
    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: VSS_SIGMAS ! Matrix of reference cross sections for VSS
@@ -147,5 +152,13 @@ module global_module
    END TYPE REACTIONS_DATA_STRUCTURE
 
    TYPE(REACTIONS_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: REACTIONS, TEMP_REACTIONS
+
+
+   ENUM, BIND(C)
+      ENUMERATOR AUSM, HLL
+   END ENUM
+
+   INTEGER(KIND(AUSM)) :: FLUX_FUNCTION = AUSM
+   
 
 end module
