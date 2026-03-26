@@ -3,6 +3,7 @@ module integration
    use pde
    use grid
    use global_module
+   use tools
 
    implicit none
    
@@ -136,8 +137,9 @@ module integration
 
 
             ! Update solution
-            !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_diff)*Aface/Vcell
             U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_diff + F_dot_n_wall)*Aface/Vcell
+
+            !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_diff)*Aface/Vcell
             !WRITE(*,*) F_dot_n_diff
             !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper + F_dot_n_wall)*Aface/Vcell
             !U_new(:,eleID) = U_new(:,eleID) - dt*(F_dot_n_hyper)*Aface/Vcell
@@ -187,10 +189,12 @@ module integration
       real(kind=8), dimension(:),   intent(in)  :: U
       real(kind=8), dimension(:),   intent(out) :: S
       INTEGER,   intent(in)                     :: eleID
-      INTEGER :: I, J
+      INTEGER :: I, J, JR, R1_SP_ID, R2_SP_ID, P, P_SP_ID
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: prim
-      INTEGER :: FIRST, LAST, RHOI, RHOJ, MOMXI, MOMXJ, MOMYI, MOMYJ, ENEI, ENEJ
+      INTEGER :: FIRST, LAST, RHOI, RHOJ, MOMXI, MOMXJ, MOMYI, MOMYJ, ENEI, ENEJ, RHOP, MOMXP, MOMYP, ENEP
       REAL(KIND=8) :: MI, MJ, MIJ, NI, NJ, UXI, UXJ, UYI, UYJ, TI, TJ, TIJ, VTHIJ, S_MOM_IJ, UIDOTW, UJDOTW, S_ENE_IJ, QIJ
+      REAL(KIND=8) :: K_FORWARD, TEMP, RATE_OF_PROGRESS
+      REAL(KIND=8) :: MP, NP, UXP, UYP, EP, TP, EI
 
       ALLOCATE(prim(N_SPECIES_FLUID*Neq))
       S = 0.d0
@@ -202,83 +206,156 @@ module integration
       END DO
 
       ! Elastic collisions between the different fluids
+      IF (.TRUE.) THEN
+         DO I = 1, N_SPECIES_FLUID
+            DO J = I+1, N_SPECIES_FLUID
+               RHOI  = (I-1)*Neq+1
+               RHOJ  = (J-1)*Neq+1
+               MOMXI = (I-1)*Neq+2
+               MOMXJ = (J-1)*Neq+2
+               MOMYI = (I-1)*Neq+3
+               MOMYJ = (J-1)*Neq+3
+               ENEI  = (I-1)*Neq+4
+               ENEJ  = (J-1)*Neq+4
 
-      DO I = 1, N_SPECIES_FLUID
-         DO J = I+1, N_SPECIES_FLUID
-            RHOI  = (I-1)*Neq+1
-            RHOJ  = (J-1)*Neq+1
-            MOMXI = (I-1)*Neq+2
-            MOMXJ = (J-1)*Neq+2
-            MOMYI = (I-1)*Neq+3
-            MOMYJ = (J-1)*Neq+3
-            ENEI  = (I-1)*Neq+4
-            ENEJ  = (J-1)*Neq+4
+               ! Momentum and energy elastic source terms from [Benilov, Phys. Plasmas 4, 521–528 (1997)]
+               ! (in the low-Mach number limit)
+               
+               MI = SPECIES(I)%MOLECULAR_MASS
+               MJ = SPECIES(J)%MOLECULAR_MASS
+               MIJ = MI*MJ/(MI+MJ)
 
-            ! Momentum and energy elastic source terms from [Benilov, Phys. Plasmas 4, 521–528 (1997)]
-            ! (in the low-Mach number limit)
-            
-            MI = SPECIES(I)%MOLECULAR_MASS
-            MJ = SPECIES(J)%MOLECULAR_MASS
-            MIJ = MI*MJ/(MI+MJ)
+               NI = prim(RHOI)/MI
+               NJ = prim(RHOJ)/MJ
+               UXI = prim(MOMXI)
+               UXJ = prim(MOMXJ)
+               UYI = prim(MOMYI)
+               UYJ = prim(MOMYJ)
+               TI = prim(ENEI)
+               TJ = prim(ENEJ)
+               TIJ = (MI*TJ+MJ*TI)/(MI+MJ)
 
-            NI = prim(RHOI)/MI
-            NJ = prim(RHOJ)/MJ
-            UXI = prim(MOMXI)
-            UXJ = prim(MOMXJ)
-            UYI = prim(MOMYI)
-            UYJ = prim(MOMYJ)
-            TI = prim(ENEI)
-            TJ = prim(ENEJ)
-            TIJ = (MI*TJ+MJ*TI)/(MI+MJ)
+               VTHIJ = SQRT(8*KB*TIJ/(PI*MIJ))
 
-            VTHIJ = SQRT(8*KB*TIJ/(PI*MIJ))
+               QIJ = PI*(0.5*(SPECIES(I)%DIAM + SPECIES(J)%DIAM))**2
 
-            QIJ = PI*(0.5*(SPECIES(I)%DIAM + SPECIES(J)%DIAM))**2
+               S_MOM_IJ = 4./3.*MIJ*VTHIJ*QIJ*NI*NJ
+               S(MOMXI) = S(MOMXI) + S_MOM_IJ*( UXJ - UXI )
+               S(MOMXJ) = S(MOMXJ) - S_MOM_IJ*( UXJ - UXI )
+               S(MOMYI) = S(MOMYI) + S_MOM_IJ*( UYJ - UYI )
+               S(MOMYJ) = S(MOMYJ) - S_MOM_IJ*( UYJ - UYI )
 
-            S_MOM_IJ = 4./3.*MIJ*VTHIJ*QIJ*NI*NJ
-            !S(MOMXI) = S(MOMXI) + S_MOM_IJ*( UXJ - UXI )
-            !S(MOMXJ) = S(MOMXJ) - S_MOM_IJ*( UXJ - UXI )
-            !S(MOMYI) = S(MOMYI) + S_MOM_IJ*( UYJ - UYI )
-            !S(MOMYJ) = S(MOMYJ) - S_MOM_IJ*( UYJ - UYI )
+               UIDOTW = UXI*(UXI-UXJ) + UYI*(UYI-UYJ)
+               UJDOTW = UXJ*(UXI-UXJ) + UYJ*(UYI-UYJ)
+               S_ENE_IJ = 4./3.*MIJ/(MI+MJ)*VTHIJ*QIJ*NI*NJ*(3*KB*(TI-TJ) + MI*TJ/TIJ*UIDOTW + MJ*TI/TIJ*UJDOTW)
+               S(ENEI) = S(ENEI) - S_ENE_IJ
+               S(ENEJ) = S(ENEJ) + S_ENE_IJ
 
-            UIDOTW = UXI*(UXI-UXJ) + UYI*(UYI-UYJ)
-            UJDOTW = UXJ*(UXI-UXJ) + UYJ*(UYI-UYJ)
-            S_ENE_IJ = 4./3.*MIJ/(MI+MJ)*VTHIJ*QIJ*NI*NJ*(3*KB*(TI-TJ) + MI*TJ/TIJ*UIDOTW + MJ*TI/TIJ*UJDOTW)
-            !S(ENEI) = S(ENEI) - S_ENE_IJ
-            !S(ENEJ) = S(ENEJ) + S_ENE_IJ
-
-            ! Update stability constraints
-            invdt_coll = MAX(invdt_coll, 4./3.*NI*QIJ*VTHIJ, 4./3.*NJ*QIJ*VTHIJ)
+               ! Update stability constraints
+               invdt_coll = MAX(invdt_coll, 4./3.*NI*QIJ*VTHIJ, 4./3.*NJ*QIJ*VTHIJ)
+            END DO
          END DO
-      END DO
+      END IF
 
       ! Reactions with the background
 
-      DO I = 1, N_SPECIES_FLUID
-         DO J = N_SPECIES_FLUID + 1, N_SPECIES
-            RHOI  = (I-1)*Neq+1
-            MOMXI = (I-1)*Neq+2
-            MOMYI = (I-1)*Neq+3
-            ENEI  = (I-1)*Neq+4
+      DO I = 1, N_SPECIES_FLUID ! The first reactant must be among the fluid species.
 
-            MI = SPECIES(I)%MOLECULAR_MASS
+         RHOI  = (I-1)*Neq+1
+         MOMXI = (I-1)*Neq+2
+         MOMYI = (I-1)*Neq+3
+         ENEI  = (I-1)*Neq+4
+
+         MI = SPECIES(I)%MOLECULAR_MASS
+
+         NI = prim(RHOI)/MI
+         UXI = prim(MOMXI)
+         UYI = prim(MOMYI)
+         EI = U(ENEI)/prim(RHOI)
+         TI = prim(ENEI)
+
+         DO J = N_SPECIES_FLUID + 1, N_SPECIES ! The second reactant must be in the background.
+
             MJ = SPECIES(J)%MOLECULAR_MASS
-            MIJ = MI*MJ/(MI+MJ)
 
-            NI = prim(RHOI)/MI
             NJ = BG_CELL_NRHO(J,eleID)
-            UXI = prim(MOMXI)
             UXJ = BG_CELL_VX(J,eleID)
-            UYI = prim(MOMYI)
             UYJ = BG_CELL_VY(J,eleID)
-            TI = prim(ENEI)
             TJ = BG_CELL_TEMP(J,eleID)
-            TIJ = (MI*TJ+MJ*TI)/(MI+MJ)
 
+            MIJ = MI*MJ/(MI+MJ)
+            TIJ = (MI*TJ+MJ*TI)/(MI+MJ)
             VTHIJ = SQRT(8*KB*TIJ/(PI*MIJ))
+
+            DO JR = 1, N_REACTIONS
+               R1_SP_ID = REACTIONS(JR)%R1_SP_ID
+               R2_SP_ID = REACTIONS(JR)%R2_SP_ID
+
+               IF ((R1_SP_ID .NE. I .OR. R2_SP_ID .NE. J) .AND. &
+                   (R1_SP_ID .NE. J .OR. R2_SP_ID .NE. I)) CYCLE
+
+               TEMP = TIJ ! Temperature switch maybe necessary
+
+               IF (REACTIONS(JR)%TYPE == FIXED_RATE) THEN
+                  K_FORWARD = REACTIONS(JR)%CONSTANT_RATE
+               ELSE IF (REACTIONS(JR)%TYPE == ARRHENIUS) THEN
+                  K_FORWARD = REACTIONS(JR)%A * TEMP**REACTIONS(JR)%N * EXP(-REACTIONS(JR)%TA / TEMP)
+               ELSE IF (REACTIONS(JR)%TYPE == HARD_SPHERE) THEN
+                  K_FORWARD = PI*REACTIONS(JR)%DIAM**2 * SQRT(8*KB*TEMP/(PI*MIJ)) * EXP(-REACTIONS(JR)%TA / TEMP) &
+                  * (1. + REACTIONS(JR)%TA / TEMP)
+               ELSE IF (REACTIONS(JR)%TYPE == TABULATED) THEN
+                  K_FORWARD = INTERP_RATE(TEMP*KB/QE, REACTIONS(JR)%TABLE_TEMP, REACTIONS(JR)%TABLE_RATE)
+               END IF
+
+               RATE_OF_PROGRESS = K_FORWARD*NI*NJ ! [1/m3/s]
+
+               ! Subtract reactants
+               S(RHOI) = S(RHOI) - MI*RATE_OF_PROGRESS
+               S(MOMXI) = S(MOMXI) - MI*RATE_OF_PROGRESS*UXI
+               S(MOMYI) = S(MOMYI) - MI*RATE_OF_PROGRESS*UYI
+               S(ENEI) = S(ENEI) - MI*RATE_OF_PROGRESS*EI + RATE_OF_PROGRESS*REACTIONS(JR)%DELTAE(I)
+               !S(ENEJ) = S(ENEJ) - 0.5*MJ*RATE_OF_PROGRESS*(UXJ**2 + UYJ**2) ! Check, this is not the total energy I think.
+
+               ! Add products (might be fluid or background)
+
+               DO P = 1, REACTIONS(JR)%N_PROD
+                  IF (P == 1) P_SP_ID = REACTIONS(JR)%P1_SP_ID
+                  IF (P == 2) P_SP_ID = REACTIONS(JR)%P2_SP_ID
+                  IF (P == 3) P_SP_ID = REACTIONS(JR)%P3_SP_ID
+                  IF (P == 4) P_SP_ID = REACTIONS(JR)%P4_SP_ID
+
+                  IF (P_SP_ID .LE. N_SPECIES_FLUID) THEN ! Product is fluid
+                     RHOP  = (P_SP_ID-1)*Neq+1
+                     MOMXP = (P_SP_ID-1)*Neq+2
+                     MOMYP = (P_SP_ID-1)*Neq+3
+                     ENEP  = (P_SP_ID-1)*Neq+4
+
+                     MP = SPECIES(P_SP_ID)%MOLECULAR_MASS
+
+                     NP = prim(RHOP)/MP
+                     UXP = prim(MOMXP)
+                     UYP = prim(MOMYP)
+                     EP = U(ENEP)/prim(RHOP)
+                     TP = prim(ENEP)
+
+                     S(RHOP) = S(RHOP) + MP*RATE_OF_PROGRESS
+                     S(MOMXP) = S(MOMXP) + MP*RATE_OF_PROGRESS*UXP
+                     S(MOMYP) = S(MOMYP) + MP*RATE_OF_PROGRESS*UYP
+                     S(ENEP) = S(ENEP) + MP*RATE_OF_PROGRESS*EP + RATE_OF_PROGRESS*REACTIONS(JR)%DELTAE(P+2)
+
+                  END IF
+
+               END DO
+
+
+            END DO
 
          END DO
       END DO
+
+
+
+
 
       IF (AXI) THEN
          DO I = 1, N_SPECIES_FLUID

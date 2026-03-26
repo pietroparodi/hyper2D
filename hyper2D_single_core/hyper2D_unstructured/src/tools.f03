@@ -302,4 +302,57 @@ module tools
    END SUBROUTINE CHECK
 
 
+
+   FUNCTION INTERP_RATE(VALUE_TEMP, TABLE_TEMP, TABLE_RATE) RESULT(VALUE_RATE)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: VALUE_TEMP
+      INTEGER :: L, R
+      REAL(KIND=8), DIMENSION(:), INTENT(IN) :: TABLE_TEMP, TABLE_RATE
+      INTEGER :: INDEX
+      REAL(KIND=8) :: VALUE_RATE
+
+      L = LBOUND(TABLE_TEMP, DIM=1)
+      R = UBOUND(TABLE_TEMP, DIM=1)
+
+      INDEX = -1
+      IF (VALUE_TEMP .LT. TABLE_TEMP(L)) THEN
+         ! Lower than lower energy value
+         !VALUE_RATE = TABLE_RATE(L)
+         VALUE_RATE = 0
+         RETURN
+      ELSE IF (VALUE_TEMP .GT. TABLE_TEMP(R)) THEN
+         ! Higher than highest energy value
+         !VALUE_RATE = TABLE_RATE(R)
+         VALUE_RATE = 0
+         RETURN
+      ELSE IF (R == L+1) THEN
+         ! Only two values in the table
+         VALUE_RATE = TABLE_RATE(L) + (TABLE_RATE(R)-TABLE_RATE(L))*(VALUE_TEMP-TABLE_TEMP(L))/(TABLE_TEMP(R)-TABLE_TEMP(L))
+         RETURN
+      ELSE
+         DO
+            INDEX = (L+R)/2
+            IF (TABLE_TEMP(INDEX) .LE. VALUE_TEMP) THEN
+               IF (TABLE_TEMP(INDEX+1) .GT. VALUE_TEMP) EXIT
+               L = INDEX
+            ELSE
+               IF (TABLE_TEMP(INDEX-1) .LE. VALUE_TEMP) THEN
+                  INDEX = INDEX-1
+                  EXIT
+               END IF
+               R = INDEX
+            END IF
+         END DO
+         ! The value we are looking for is between INDEX and INDEX+1.
+         L = INDEX
+         R = INDEX+1
+         VALUE_RATE = TABLE_RATE(L) + (TABLE_RATE(R)-TABLE_RATE(L))*(VALUE_TEMP-TABLE_TEMP(L))/(TABLE_TEMP(R)-TABLE_TEMP(L))
+         RETURN
+      END IF
+
+   END FUNCTION INTERP_RATE
+
+
 end module 

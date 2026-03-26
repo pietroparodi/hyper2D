@@ -76,7 +76,7 @@ program hyper2D
       ! ------ Estimate current Courant number and update time step -----
       CFL_now = MAX(invdt_adv,invdt_cond, invdt_diff, invdt_coll)*dt
       IF ( mod(t_ID, STATS_EVERY) .EQ. 0 ) THEN
-         write(*,'(A,EN15.5,A,F10.5,A,ES14.7,A,A,F10.5,A,F10.5,A,F10.5)') 'Time', t_now, &
+         write(*,'(A,EN15.5,A,F10.5,A,ES14.7,A,A,F10.5,A,F10.5,A,F10.5,A,F10.5)') 'Time', t_now, &
          ' [s]. Current CFL: ', CFL_now, '. dt = ', dt, '[s]', &
          ' CFL Advection: ', invdt_adv*dt, ' CFL Conduction: ', invdt_cond*dt, &
          ' CFL Diffusion: ', invdt_diff*dt, ' CFL Collisions: ', invdt_coll*dt

@@ -268,7 +268,7 @@ MODULE initialization
       INTEGER :: N_STR
       CHARACTER(LEN=80), ALLOCATABLE :: STRARRAY(:)
       TYPE(REACTIONS_DATA_STRUCTURE) :: NEW_REACTION
-      INTEGER :: I, NROWS
+      INTEGER :: I, NROWS, INDEX
       CHARACTER*512      :: LINECS
       CHARACTER*256      :: REACTION_FILENAME
       
@@ -298,14 +298,12 @@ MODULE initialization
          READ(in3,'(A)', IOSTAT=ReasonEOF) DEFINITION ! Read reaction components line         
          CALL STRIP_COMMENTS(DEFINITION, '!')         ! Remove comments from line
 
-         IF (ReasonEOF < 0) EXIT ! End of file reached
+         IF (ReasonEOF < 0) EXIT
 
-         ! ~~~~~~~~~~~~~  Geometry and computational domain  ~~~~~~~~~~~~~~~~~
-         
          CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
 
          IF (N_STR == 0) CYCLE ! This is an empty line
-         IF (STRARRAY(2) .NE. '+' .OR. (STRARRAY(4) .NE. '-->' .AND. STRARRAY(4) .NE. '-CEX->') .OR. STRARRAY(6) .NE. '+') THEN
+         IF (STRARRAY(2) .NE. '+' .OR. (STRARRAY(4) .NE. '-->') .OR. STRARRAY(6) .NE. '+') THEN
             WRITE(*,*) 'Line in reactions file:', DEFINITION
             CALL ERROR_ABORT('Attention, format is not respected in reactions file.')
          END IF
@@ -335,86 +333,77 @@ MODULE initialization
             NEW_REACTION%N_PROD = 4
             NEW_REACTION%P4_SP_ID = SPECIES_NAME_TO_ID(STRARRAY(11))
          END IF
-      
-         IF (STRARRAY(4) == '-CEX->') THEN
-            NEW_REACTION%IS_CEX = .TRUE.
-         ELSE
-            NEW_REACTION%IS_CEX = .FALSE.
-         END IF
 
          READ(in3,'(A)', IOSTAT=ReasonEOF) DEFINITION ! Read reaction parameters line
+         IF (ReasonEOF < 0) EXIT
          CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
          IF (STRARRAY(1) == 'constant') THEN
             NEW_REACTION%TYPE = FIXED_RATE
-            READ(STRARRAY(2), *) NEW_REACTION%EA
-            READ(STRARRAY(3), *) NEW_REACTION%CONSTANT_CS
-            NEW_REACTION%MAX_SIGMA = NEW_REACTION%CONSTANT_CS
-         ELSE IF (STRARRAY(1) == 'tce') THEN
-            NEW_REACTION%TYPE = TCE
-            IF (NEW_REACTION%IS_CEX) THEN
-               NEW_REACTION%EA = 0.d0
-               READ(STRARRAY(2), '(ES14.0)') NEW_REACTION%C1
-               READ(STRARRAY(3), '(ES14.0)') NEW_REACTION%C2
-            ELSE
-               READ(STRARRAY(2), '(ES14.0)') NEW_REACTION%A
-               READ(STRARRAY(3), '(ES14.0)') NEW_REACTION%N
-               READ(STRARRAY(4), '(ES14.0)') NEW_REACTION%EA
-            END IF
-         ELSE IF (STRARRAY(1) == 'lxcat') THEN
-            NEW_REACTION%TYPE = LXCAT
-            READ(STRARRAY(2), *) NEW_REACTION%EA
-            READ(STRARRAY(3), *) REACTION_FILENAME
+            READ(STRARRAY(2), *) NEW_REACTION%CONSTANT_RATE
+         ELSE IF (STRARRAY(1) == 'hardsphere') THEN
+            NEW_REACTION%TYPE = HARD_SPHERE
+            READ(STRARRAY(2), *) NEW_REACTION%DIAM
+            READ(STRARRAY(3), *) NEW_REACTION%TA
+         ELSE IF (STRARRAY(1) == 'arrhenius') THEN
+            NEW_REACTION%TYPE = ARRHENIUS
+            READ(STRARRAY(2), *) NEW_REACTION%A
+            READ(STRARRAY(3), *) NEW_REACTION%N
+            READ(STRARRAY(4), *) NEW_REACTION%TA
+         ELSE IF (STRARRAY(1) == 'tabulated') THEN
+            NEW_REACTION%TYPE = TABULATED
+            READ(STRARRAY(2), *) REACTION_FILENAME
 
 
             OPEN(UNIT=in4,FILE=REACTION_FILENAME, STATUS='old',IOSTAT=ios)
 
             IF (ios .NE. 0) THEN
-               CALL ERROR_ABORT('Attention, reactions cross section file not found! ABORTING.')
+               CALL ERROR_ABORT('Attention, reactions rate file not found! ABORTING.')
             ENDIF
       
             LINECS = '' ! Init empty
 
             DO
                READ(in4,'(A)', IOSTAT=ReasonEOFCS) LINECS
-               IF (ReasonEOFCS < 0) CALL ERROR_ABORT('Attention, reactions cross section file format error! ABORTING.')
+               IF (ReasonEOFCS < 0) CALL ERROR_ABORT('Attention, reactions rate file format error! ABORTING.')
                   
                IF (LINECS(1:5) == '-----') EXIT
             END DO
             NROWS = 0
             DO
                READ(in4,'(A)', IOSTAT=ReasonEOFCS) LINECS  
-               IF (ReasonEOFCS < 0) CALL ERROR_ABORT('Attention, reactions cross section file format error! ABORTING.')
+               IF (ReasonEOFCS < 0) CALL ERROR_ABORT('Attention, reactions rate file format error! ABORTING.')
                   
                IF (LINECS(1:5) == '-----') EXIT
                NROWS = NROWS + 1
             END DO
             REWIND(in4)
-            IF (ALLOCATED(NEW_REACTION%TABLE_ENERGY)) DEALLOCATE(NEW_REACTION%TABLE_ENERGY)
-            IF (ALLOCATED(NEW_REACTION%TABLE_CS)) DEALLOCATE(NEW_REACTION%TABLE_CS)
-            ALLOCATE(NEW_REACTION%TABLE_ENERGY(NROWS))
-            ALLOCATE(NEW_REACTION%TABLE_CS(NROWS))
+            IF (ALLOCATED(NEW_REACTION%TABLE_TEMP)) DEALLOCATE(NEW_REACTION%TABLE_TEMP)
+            IF (ALLOCATED(NEW_REACTION%TABLE_RATE)) DEALLOCATE(NEW_REACTION%TABLE_RATE)
+            ALLOCATE(NEW_REACTION%TABLE_TEMP(NROWS))
+            ALLOCATE(NEW_REACTION%TABLE_RATE(NROWS))
             DO
                READ(in4,'(A)', IOSTAT=ReasonEOFCS) LINECS
-               IF (ReasonEOFCS < 0) CALL ERROR_ABORT('Attention, reactions cross section file format error! ABORTING.')
+               IF (ReasonEOFCS < 0) CALL ERROR_ABORT('Attention, reactions rate file format error! ABORTING.')
                   
                IF (LINECS(1:5) == '-----') EXIT
             END DO
-            NEW_REACTION%MAX_SIGMA = 0
             DO I = 1, NROWS
                READ(in4,'(A)', IOSTAT=ReasonEOFCS) LINECS
-               IF (ReasonEOFCS < 0) CALL ERROR_ABORT('Attention, reactions cross section file format error! ABORTING.')
-               READ(LINECS, *) NEW_REACTION%TABLE_ENERGY(I), NEW_REACTION%TABLE_CS(I)
-               IF (NEW_REACTION%TABLE_CS(I) > NEW_REACTION%MAX_SIGMA) NEW_REACTION%MAX_SIGMA = NEW_REACTION%TABLE_CS(I) ! Reaction maximum cross section
+               IF (ReasonEOFCS < 0) CALL ERROR_ABORT('Attention, reactions rate file format error! ABORTING.')
+               READ(LINECS, *) NEW_REACTION%TABLE_TEMP(I), NEW_REACTION%TABLE_RATE(I)
             END DO
 
             CLOSE(in4)
 
-            NEW_REACTION%TABLE_ENERGY = NEW_REACTION%TABLE_ENERGY * QE ! Table is in [eV] but we need [J].
-
          END IF
 
-         NEW_REACTION%EA = NEW_REACTION%EA * QE
-         NEW_REACTION%COUNTS = 0
+
+         READ(in3,'(A)', IOSTAT=ReasonEOF) DEFINITION ! Read reaction parameters line
+         CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
+         DO I = 1, MIN(N_STR, 6)
+            READ(STRARRAY(I), *) NEW_REACTION%DELTAE(I)
+         END DO
+
 
          IF (ReasonEOF < 0) EXIT ! End of file reached
          
@@ -434,30 +423,35 @@ MODULE initialization
       
       CLOSE(in3) ! Close input file
 
-      ! IF (PROC_ID == 0) THEN
-      !    DO index = 1, N_REACTIONS
-      !       WRITE(*,*) 'Reaction ', index, 'Has 2 reactants with ids:', REACTIONS(index)%R1_SP_ID, ' and ', &
-      !       REACTIONS(index)%R2_SP_ID
-      !       IF (REACTIONS(index)%N_PROD == 2) THEN
-      !          WRITE(*,*) REACTIONS(index)%N_PROD, 'products with ids:',  REACTIONS(index)%P1_SP_ID, ' and ', &
-      !          REACTIONS(index)%P2_SP_ID
-      !          IF (REACTIONS(index)%IS_CEX) WRITE(*,*) 'This is a CEX reaction'
-      !       ELSE IF (REACTIONS(index)%N_PROD == 3) THEN
-      !          WRITE(*,*) REACTIONS(index)%N_PROD, 'products with ids:',  REACTIONS(index)%P1_SP_ID, ', ', &
-      !          REACTIONS(index)%P2_SP_ID, ' and ', REACTIONS(index)%P3_SP_ID
-      !       END IF
-      !       IF (REACTIONS(index)%TYPE == TCE) THEN
-      !          WRITE(*,*) 'Parameters:', REACTIONS(index)%A, REACTIONS(index)%N, REACTIONS(index)%EA
-      !       ELSE IF (REACTIONS(index)%TYPE == LXCAT) THEN
-      !          WRITE(*,*) 'Reaction ', index, ' is from tabulated data in LxCat format.'
-      !          WRITE(*,*) 'Activation energy: ', REACTIONS(index)%EA
-      !          WRITE(*,*) 'Here are the energies (eV): ', REACTIONS(index)%TABLE_ENERGY
-      !          WRITE(*,*) 'And here are the cross sections (m^2): ', REACTIONS(index)%TABLE_CS
-      !       ELSE
-      !          WRITE(*,*) 'Reaction ', index, ' is not defined!'
-      !       END IF
-      !    END DO
-      ! END IF
+
+      DO INDEX = 1, N_REACTIONS
+         WRITE(*,*) 'Reaction ', index, 'Has 2 reactants with ids:', REACTIONS(index)%R1_SP_ID, ' and ', &
+         REACTIONS(index)%R2_SP_ID
+         IF (REACTIONS(index)%N_PROD == 2) THEN
+            WRITE(*,*) REACTIONS(index)%N_PROD, 'products with ids:',  REACTIONS(index)%P1_SP_ID, ' and ', &
+            REACTIONS(index)%P2_SP_ID
+         ELSE IF (REACTIONS(index)%N_PROD == 3) THEN
+            WRITE(*,*) REACTIONS(index)%N_PROD, 'products with ids:',  REACTIONS(index)%P1_SP_ID, ', ', &
+            REACTIONS(index)%P2_SP_ID, ' and ', REACTIONS(index)%P3_SP_ID
+         END IF
+         IF (REACTIONS(index)%TYPE == FIXED_RATE) THEN
+            WRITE(*,*) 'Fixed rate reaction with rate:', REACTIONS(index)%CONSTANT_RATE
+         ELSE IF (REACTIONS(index)%TYPE == HARD_SPHERE) THEN
+            WRITE(*,*) 'Hard-sphere type with diameter ', REACTIONS(index)%DIAM, &
+            ' and activation temperature ', REACTIONS(index)%TA
+         ELSE IF (REACTIONS(index)%TYPE == ARRHENIUS) THEN
+            WRITE(*,*) 'Arrhenius type with factor ', REACTIONS(index)%A, &
+            ' exponent ', REACTIONS(index)%N, ' and activation  temperature ', REACTIONS(index)%TA
+         ELSE IF (REACTIONS(index)%TYPE == TABULATED) THEN
+            WRITE(*,*) 'Reaction ', index, ' is from tabulated data.'
+            WRITE(*,*) 'The temperature goes from ', MINVAL(REACTIONS(index)%TABLE_TEMP), &
+                       ' to ', MAXVAL(REACTIONS(index)%TABLE_TEMP)
+            WRITE(*,*) 'The rate goes from ', MINVAL(REACTIONS(index)%TABLE_RATE), &
+                       ' to ', MAXVAL(REACTIONS(index)%TABLE_RATE)
+         END IF
+         WRITE(*,*) 'The energy balance for each component are ', REACTIONS(INDEX)%DELTAE(1:2+REACTIONS(INDEX)%N_PROD)
+      END DO
+
 
    END SUBROUTINE READ_REACTIONS
 
