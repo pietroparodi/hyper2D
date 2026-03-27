@@ -40,6 +40,11 @@ module integration
       ALLOCATE(gradUprim(2,N_SPECIES_FLUID*Neq,NCELLS))
 
       DO eleID = 1, NCELLS
+         ! Skip cells that are not fluid
+         IF (U2D_GRID%CELL_PG(eleID) .NE. -1) THEN
+            IF (GRID_BC(U2D_GRID%CELL_PG(eleID))%VOLUME_BC == SOLID) CYCLE
+         END IF
+
          DO I = 1, N_SPECIES_FLUID
             FIRST = (I-1)*Neq+1
             LAST = I*Neq+1
@@ -50,6 +55,10 @@ module integration
       call compute_cell_centered_gradients_weighted_least_squares(Uprim, gradUprim)
 
       do eleID = 1, NCELLS
+         ! Skip cells that are not fluid
+         IF (U2D_GRID%CELL_PG(eleID) .NE. -1) THEN
+            IF (GRID_BC(U2D_GRID%CELL_PG(eleID))%VOLUME_BC == SOLID) CYCLE
+         END IF
 
          Acell = U2D_GRID%CELL_AREAS(eleID)
          Vcell = U2D_GRID%CELL_VOLUMES(eleID)
@@ -893,12 +902,12 @@ module integration
       real(kind=8), dimension(:,:), intent(in)  :: U
       real(kind=8), dimension(:,:,:), intent(inout)  :: gradU
 
-      INTEGER :: I, J, neigh, FACE_PG, SP_ID, FIRST, LAST
+      INTEGER :: I, J, neigh, FACE_PG, SP_ID, FIRST, LAST, NEIGHBORPG
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: Uface
       REAL(KIND=8) :: nx, ny, Aface, Vcell
       REAL(KIND=8), DIMENSION(:), allocatable :: U_adj
 
-      LOGICAL :: ONAXIS
+      LOGICAL :: ONAXIS, FLUIDBOUNDARY
 
 
       ! Compute gradient in each cell from nodal values
@@ -907,6 +916,11 @@ module integration
       ALLOCATE(U_adj(N_SPECIES_FLUID*Neq))
 
       DO I = 1, NCELLS
+         ! Skip cells that are not fluid
+         IF (U2D_GRID%CELL_PG(I) .NE. -1) THEN
+            IF (GRID_BC(U2D_GRID%CELL_PG(I))%VOLUME_BC == SOLID) CYCLE
+         END IF
+
          ONAXIS = .FALSE.
          DO J = 1, 3 ! The cell face
             ! Extract data
@@ -915,10 +929,19 @@ module integration
             ny = U2D_GRID%EDGE_NORMAL(2,J,I)
             Vcell = U2D_GRID%CELL_VOLUMES(I)
 
+            FLUIDBOUNDARY = .FALSE.
             neigh = U2D_GRID%CELL_NEIGHBORS(J,I)
-            IF (neigh .NE. -1) THEN
-               Uface = 0.5*(U(:,I) + U(:,neigh))
+            IF (neigh == -1) THEN
+               FLUIDBOUNDARY = .TRUE.
+            ELSE
+               NEIGHBORPG = U2D_GRID%CELL_PG(neigh)
+               IF (NEIGHBORPG .NE. -1) THEN
+                  IF (GRID_BC(NEIGHBORPG)%VOLUME_BC == SOLID) FLUIDBOUNDARY = .TRUE.
+               END IF
+            END IF
 
+            IF (.NOT. FLUIDBOUNDARY) THEN
+               Uface = 0.5*(U(:,I) + U(:,neigh))
             else
                FACE_PG = U2D_GRID%CELL_EDGES_PG(J,I)
                if (GRID_BC(FACE_PG)%PARTICLE_BC == STATE) then ! ++++++++ GENERIC BOUNDARY +++++++++++++++++++
@@ -984,12 +1007,12 @@ module integration
       real(kind=8), dimension(:,:), intent(in)  :: U
       real(kind=8), dimension(:,:,:), intent(inout)  :: gradU
 
-      INTEGER :: I, J, neigh, FACE_PG, SP_ID, FIRST, LAST
+      INTEGER :: I, J, neigh, FACE_PG, SP_ID, FIRST, LAST, NEIGHBORPG
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: Uface
       REAL(KIND=8) :: nx, ny, Aface, Vcell
       REAL(KIND=8), DIMENSION(:), allocatable :: U_adj
 
-      LOGICAL :: ONAXIS
+      LOGICAL :: ONAXIS, FLUIDBOUNDARY
 
 
       ! Compute gradient in each cell from nodal values
@@ -998,6 +1021,11 @@ module integration
       ALLOCATE(U_adj(N_SPECIES_FLUID*Neq))
 
       DO I = 1, NCELLS
+         ! Skip cells that are not fluid
+         IF (U2D_GRID%CELL_PG(I) .NE. -1) THEN
+            IF (GRID_BC(U2D_GRID%CELL_PG(I))%VOLUME_BC == SOLID) CYCLE
+         END IF
+         
          ONAXIS = .FALSE.
          DO J = 1, 3 ! The cell face
             ! Extract data
@@ -1006,10 +1034,19 @@ module integration
             ny = U2D_GRID%EDGE_NORMAL(2,J,I)
             Vcell = U2D_GRID%CELL_VOLUMES(I)
 
+            FLUIDBOUNDARY = .FALSE.
             neigh = U2D_GRID%CELL_NEIGHBORS(J,I)
-            IF (neigh .NE. -1) THEN
-               Uface = 0.5*(U(:,I) + U(:,neigh))
+            IF (neigh == -1) THEN
+               FLUIDBOUNDARY = .TRUE.
+            ELSE
+               NEIGHBORPG = U2D_GRID%CELL_PG(neigh)
+               IF (NEIGHBORPG .NE. -1) THEN
+                  IF (GRID_BC(NEIGHBORPG)%VOLUME_BC == SOLID) FLUIDBOUNDARY = .TRUE.
+               END IF
+            END IF
 
+            IF (.NOT. FLUIDBOUNDARY) THEN
+               Uface = 0.5*(U(:,I) + U(:,neigh))
             else
                FACE_PG = U2D_GRID%CELL_EDGES_PG(J,I)
                if (GRID_BC(FACE_PG)%PARTICLE_BC == STATE) then ! ++++++++ GENERIC BOUNDARY +++++++++++++++++++

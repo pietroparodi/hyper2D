@@ -27,7 +27,7 @@ MODULE initialization
       CHARACTER*64       :: BG_MIX_NAME, FLUX_FUNCTION_STRING
 
       ! Open input file for reading
-      OPEN(UNIT=in1,FILE='input', STATUS='old',IOSTAT=ios)
+      OPEN(UNIT=in1,FILE='input.fluid', STATUS='old',IOSTAT=ios)
 
       IF (ios.NE.0) THEN
          CALL ERROR_ABORT('Attention, "input" file not found! ABORTING.')

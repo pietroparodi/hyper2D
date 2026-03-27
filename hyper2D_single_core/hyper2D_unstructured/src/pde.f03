@@ -16,8 +16,9 @@ module pde
       real(kind=8), dimension(:,:), intent(inout) :: U
 
       real(kind=8) :: P0, rho, FRAC
-      INTEGER :: I, J, SP_ID
+      INTEGER :: I, J, SP_ID, eleID
 
+      U = 0.d0
 
       DO I = 1, MIXTURES(INITIAL_MIX_ID)%N_COMPONENTS
          SP_ID = MIXTURES(INITIAL_MIX_ID)%COMPONENTS(I)%ID
@@ -28,12 +29,17 @@ module pde
          rho = INITIAL_NRHO*FRAC*SPECIES(SP_ID)%MOLECULAR_MASS
          P0   = INITIAL_NRHO*FRAC*kB*INITIAL_TEMP ! [Pa] gas pressure
 
-         ! Initialize all cells 
-         U(J+1,:) = rho     ! Density
-         U(J+2,:) = rho*INITIAL_UX ! Momentum along x
-         U(J+3,:) = rho*INITIAL_UY ! Momentum along y
-         U(J+4,:) = rho*(INITIAL_UX**2 + INITIAL_UY**2)/2.0 + P0/(SPECIES(SP_ID)%GAMMA-1.0) ! total energy
-
+         ! Initialize all cells
+         DO eleID = 1, NCELLS
+            ! Skip cells that are not fluid
+            IF (U2D_GRID%CELL_PG(eleID) .NE. -1) THEN
+               IF (GRID_BC(U2D_GRID%CELL_PG(eleID))%VOLUME_BC == SOLID) CYCLE
+            END IF
+            U(J+1,eleID) = rho     ! Density
+            U(J+2,eleID) = rho*INITIAL_UX ! Momentum along x
+            U(J+3,eleID) = rho*INITIAL_UY ! Momentum along y
+            U(J+4,eleID) = rho*(INITIAL_UX**2 + INITIAL_UY**2)/2.0 + P0/(SPECIES(SP_ID)%GAMMA-1.0) ! total energy
+         END DO
       END DO
 
 

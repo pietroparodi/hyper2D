@@ -52,6 +52,11 @@ module tools
 
       prim = 0.0 ! Init
       do IC = 1, NCELLS
+         ! Skip cells that are not fluid
+         IF (U2D_GRID%CELL_PG(IC) .NE. -1) THEN
+            IF (GRID_BC(U2D_GRID%CELL_PG(IC))%VOLUME_BC == SOLID) CYCLE
+         END IF
+         
          DO I = 1, N_SPECIES_FLUID
             call compute_primitive_from_conserved(U((I-1)*Neq+1:I*Neq+1,IC), prim((I-1)*Neq+1:I*Neq+1,IC), I)
          END DO
