@@ -15,17 +15,19 @@ module global_module
    REAL(KIND=8) :: ME   = 9.1093837139d-31               ! https://physics.nist.gov/cgi-bin/cuu/Value?me
    REAL(KIND=8) :: HP   = 6.62607015d-34                 ! https://physics.nist.gov/cgi-bin/cuu/Value?h
 
-   CHARACTER(LEN=256) :: GRID_FILENAME
+   CHARACTER(LEN=256) :: GRID_FILENAME, RESTART_FILENAME
    LOGICAL :: BOOL_BINARY_OUTPUT = .TRUE.
-   CHARACTER*256                           :: FLOWFIELD_SAVE_PATH = 'dumps/'
+   CHARACTER*256 :: FLOWFIELD_SAVE_PATH = 'dumps/'
+   LOGICAL :: BOOL_RESTART = .FALSE.
    ! Time integration
 
-   real(kind=8) :: t_end      = 0.01d0 ! [s] total simulated time (from 0 to t_end)
+   INTEGER      :: Nt = 0
+   real(kind=8) :: dt_save = 0.d0
    real(kind=8) :: CFL_target = 0.25
    real(kind=8) :: dtmax      = 1.d-2
    INTEGER      :: STATS_EVERY
-   INTEGER      :: DUMP_GRID_EVERY
-   INTEGER      :: DUMP_GRID_START
+   
+   INTEGER      :: DUMP_STATE_EVERY
 
    
    integer, parameter :: Neq = 4 ! Number of equations (per-species)
@@ -60,7 +62,7 @@ module global_module
    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: BG_CELL_VZ
    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: BG_CELL_TEMP
    INTEGER :: BG_MIX
-   LOGICAL      :: BOOL_BG_FILE
+   LOGICAL      :: BOOL_BG_FILE = .FALSE.
 
    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: VSS_GREFS ! Matrix of reference relative velocities for VSS
    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: VSS_SIGMAS ! Matrix of reference cross sections for VSS
@@ -150,10 +152,10 @@ module global_module
 
 
    ENUM, BIND(C)
-      ENUMERATOR AUSM, HLL
+      ENUMERATOR AUSM, HLL, SLAU
    END ENUM
 
-   INTEGER(KIND(AUSM)) :: FLUX_FUNCTION = AUSM
+   INTEGER(KIND(SLAU)) :: FLUX_FUNCTION = SLAU
    
 
 end module

@@ -69,7 +69,8 @@ MODULE initialization
 
 
          ! ~~~~~~~~~~~~~  Numerical settings  ~~~~~~~~~~~~~~~~~
-         IF (line=='Final_time:')              READ(in1,*) t_end
+         IF (line=='Timestep:')                READ(in1,*) dt_save
+         IF (line=='Number_of_timesteps:')     READ(in1,*) Nt
          IF (line=='Max_timestep:')            READ(in1,*) dtmax
          IF (line=='Target_CFL:')              READ(in1,*) CFL_target
          IF (line=='Stats_every:')             READ(in1,*) STATS_EVERY
@@ -85,8 +86,11 @@ MODULE initialization
             READ(in1,*) FLOWFIELD_SAVE_PATH
          END IF
          IF (line=='Binary_output:')           READ(in1,*) BOOL_BINARY_OUTPUT
-         IF (line=='Dump_grid_every:')         READ(in1,*) DUMP_GRID_EVERY
-         IF (line=='Dump_grid_start:')         READ(in1,*) DUMP_GRID_START
+         !IF (line=='Dump_grid_every:')         READ(in1,*) DUMP_GRID_EVERY
+         !IF (line=='Dump_grid_start:')         READ(in1,*) DUMP_GRID_START
+
+         IF (line=='Dump_state_every:')         READ(in1,*) DUMP_STATE_EVERY
+         !IF (line=='Dump_state_start:')         READ(in1,*) DUMP_STATE_START
 
 
          ! ~~~~~~~~~~~~~  Multifluid ~~~~~~~~~~~~~~~
@@ -140,9 +144,17 @@ MODULE initialization
                FLUX_FUNCTION = AUSM
             ELSE IF (FLUX_FUNCTION_STRING == "HLL") THEN
                FLUX_FUNCTION = HLL
+            ELSE IF (FLUX_FUNCTION_STRING == "SLAU") THEN
+               FLUX_FUNCTION = SLAU
             ELSE
                CALL ERROR_ABORT('Specified flux function in input file does not exist.')
             END IF
+         END IF
+
+
+         IF (line=='Read_restart:') THEN
+            READ(in1,*) RESTART_FILENAME
+            BOOL_RESTART = .TRUE.
          END IF
 
       END DO ! Loop for reading input file
@@ -1100,5 +1112,45 @@ MODULE initialization
 
 
    END SUBROUTINE DEF_INITIAL_STATE
+
+
+   SUBROUTINE READ_RESTART(filename, U)
+
+      IMPLICIT NONE
+
+      CHARACTER(LEN=256), intent(in) :: filename
+      real(kind=8), dimension(:,:), intent(inout) :: U
+      INTEGER :: ios
+
+      character(len=100) :: iomsg
+
+      ! Open file for reading
+      IF (BOOL_BINARY_OUTPUT) THEN
+         OPEN(1010, FILE=filename, ACCESS='STREAM', FORM='UNFORMATTED', STATUS='OLD', &
+         CONVERT='BIG_ENDIAN', IOSTAT=ios, IOMSG=iomsg)
+
+         IF (ios .NE. 0) THEN
+            WRITE(*,*) 'iomsg was: ', iomsg
+            CALL ERROR_ABORT('Attention, restart file not found! ABORTING.')
+         ENDIF
+
+         READ(1010, IOSTAT=ios) U
+         !IF (ios < 0) EXIT
+
+         CLOSE(1010)
+      ELSE
+         OPEN(1010, FILE=filename, STATUS='OLD', IOSTAT=ios)
+         
+         IF (ios .NE. 0) THEN
+            CALL ERROR_ABORT('Attention, restart file not found! ABORTING.')
+         ENDIF
+
+         READ(1010,*,IOSTAT=ios) U
+         !IF (ios < 0) EXIT
+
+         CLOSE(1010)
+      END IF
+
+   END SUBROUTINE
 
 END MODULE initialization

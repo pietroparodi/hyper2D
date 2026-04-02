@@ -25,11 +25,13 @@ module integration
       real(kind=8), dimension(2,Neq) :: gradUprim_neigh
       real(kind=8), dimension(:), allocatable :: F_dot_n_hyper, F_dot_n_diff, F_dot_n_wall, S
       real(kind=8) :: nx, ny, Aface, Acell, Vcell, dLR
-      integer      :: neigh, FACE_PG, I, FIRST, LAST
+      integer      :: neigh, FACE_PG, I, FIRST, LAST, NEIGHBORPG
       real(kind=8), dimension(3) :: C1, C2
 
       real(kind=8), dimension(:,:), ALLOCATABLE :: Uprim
       real(kind=8), dimension(:,:,:), ALLOCATABLE :: gradUprim
+
+      LOGICAL :: FLUIDBOUNDARY
 
       ALLOCATE(F_dot_n_hyper(N_SPECIES_FLUID*Neq))
       ALLOCATE(F_dot_n_diff(N_SPECIES_FLUID*Neq))
@@ -74,14 +76,24 @@ module integration
             nx = U2D_GRID%EDGE_NORMAL(1,intID,eleID)
             ny = U2D_GRID%EDGE_NORMAL(2,intID,eleID)
 
+            FLUIDBOUNDARY = .FALSE.
             neigh = U2D_GRID%CELL_NEIGHBORS(intID,eleID)
+            IF (neigh == -1) THEN
+               FLUIDBOUNDARY = .TRUE.
+            ELSE
+               NEIGHBORPG = U2D_GRID%CELL_PG(neigh)
+               IF (NEIGHBORPG .NE. -1) THEN
+                  IF (GRID_BC(NEIGHBORPG)%VOLUME_BC == SOLID) FLUIDBOUNDARY = .TRUE.
+               END IF
+            END IF
+
 
             ! Check what neighbor is it
             DO I = 1, N_SPECIES_FLUID
                FIRST = (I-1)*Neq+1
                LAST = I*Neq+1
 
-               if (neigh .NE. -1) then ! +++++++++ INTERNAL CELL
+               IF (.NOT. FLUIDBOUNDARY) THEN ! +++++++++ INTERNAL CELL
 
                   C1 = U2D_GRID%CELL_CENTROIDS(:,eleID)
                   C2 = U2D_GRID%CELL_CENTROIDS(:,neigh)
@@ -117,6 +129,9 @@ module integration
                   nx, ny, F_dot_n_hyper(FIRST:LAST), Acell, I)
                ELSE IF (FLUX_FUNCTION == HLL) THEN
                   call compute_fluxes_HLL(U(FIRST:LAST,eleID), U_neigh, &
+                  nx, ny, F_dot_n_hyper(FIRST:LAST), Acell, I)
+               ELSE IF (FLUX_FUNCTION == SLAU) THEN
+                  call compute_fluxes_SLAU2(U(FIRST:LAST,eleID), U_neigh, &
                   nx, ny, F_dot_n_hyper(FIRST:LAST), Acell, I)
                ELSE
                   CALL ERROR_ABORT('Error! Flux function not available.')
@@ -267,101 +282,101 @@ module integration
       END IF
 
       ! Reactions with the background
+      IF (BOOL_BG_FILE) THEN
+         DO I = 1, N_SPECIES_FLUID ! The first reactant must be among the fluid species.
 
-      DO I = 1, N_SPECIES_FLUID ! The first reactant must be among the fluid species.
+            RHOI  = (I-1)*Neq+1
+            MOMXI = (I-1)*Neq+2
+            MOMYI = (I-1)*Neq+3
+            ENEI  = (I-1)*Neq+4
 
-         RHOI  = (I-1)*Neq+1
-         MOMXI = (I-1)*Neq+2
-         MOMYI = (I-1)*Neq+3
-         ENEI  = (I-1)*Neq+4
+            MI = SPECIES(I)%MOLECULAR_MASS
 
-         MI = SPECIES(I)%MOLECULAR_MASS
+            NI = prim(RHOI)/MI
+            UXI = prim(MOMXI)
+            UYI = prim(MOMYI)
+            EI = U(ENEI)/prim(RHOI)
+            TI = prim(ENEI)
 
-         NI = prim(RHOI)/MI
-         UXI = prim(MOMXI)
-         UYI = prim(MOMYI)
-         EI = U(ENEI)/prim(RHOI)
-         TI = prim(ENEI)
+            DO J = N_SPECIES_FLUID + 1, N_SPECIES ! The second reactant must be in the background.
 
-         DO J = N_SPECIES_FLUID + 1, N_SPECIES ! The second reactant must be in the background.
+               MJ = SPECIES(J)%MOLECULAR_MASS
 
-            MJ = SPECIES(J)%MOLECULAR_MASS
+               NJ = BG_CELL_NRHO(J,eleID)
+               UXJ = BG_CELL_VX(J,eleID)
+               UYJ = BG_CELL_VY(J,eleID)
+               TJ = BG_CELL_TEMP(J,eleID)
 
-            NJ = BG_CELL_NRHO(J,eleID)
-            UXJ = BG_CELL_VX(J,eleID)
-            UYJ = BG_CELL_VY(J,eleID)
-            TJ = BG_CELL_TEMP(J,eleID)
+               MIJ = MI*MJ/(MI+MJ)
+               TIJ = (MI*TJ+MJ*TI)/(MI+MJ)
+               VTHIJ = SQRT(8*KB*TIJ/(PI*MIJ))
 
-            MIJ = MI*MJ/(MI+MJ)
-            TIJ = (MI*TJ+MJ*TI)/(MI+MJ)
-            VTHIJ = SQRT(8*KB*TIJ/(PI*MIJ))
+               DO JR = 1, N_REACTIONS
+                  R1_SP_ID = REACTIONS(JR)%R1_SP_ID
+                  R2_SP_ID = REACTIONS(JR)%R2_SP_ID
 
-            DO JR = 1, N_REACTIONS
-               R1_SP_ID = REACTIONS(JR)%R1_SP_ID
-               R2_SP_ID = REACTIONS(JR)%R2_SP_ID
+                  IF ((R1_SP_ID .NE. I .OR. R2_SP_ID .NE. J) .AND. &
+                     (R1_SP_ID .NE. J .OR. R2_SP_ID .NE. I)) CYCLE
 
-               IF ((R1_SP_ID .NE. I .OR. R2_SP_ID .NE. J) .AND. &
-                   (R1_SP_ID .NE. J .OR. R2_SP_ID .NE. I)) CYCLE
+                  TEMP = TIJ ! Temperature switch maybe necessary
 
-               TEMP = TIJ ! Temperature switch maybe necessary
-
-               IF (REACTIONS(JR)%TYPE == FIXED_RATE) THEN
-                  K_FORWARD = REACTIONS(JR)%CONSTANT_RATE
-               ELSE IF (REACTIONS(JR)%TYPE == ARRHENIUS) THEN
-                  K_FORWARD = REACTIONS(JR)%A * TEMP**REACTIONS(JR)%N * EXP(-REACTIONS(JR)%TA / TEMP)
-               ELSE IF (REACTIONS(JR)%TYPE == HARD_SPHERE) THEN
-                  K_FORWARD = PI*REACTIONS(JR)%DIAM**2 * SQRT(8*KB*TEMP/(PI*MIJ)) * EXP(-REACTIONS(JR)%TA / TEMP) &
-                  * (1. + REACTIONS(JR)%TA / TEMP)
-               ELSE IF (REACTIONS(JR)%TYPE == TABULATED) THEN
-                  K_FORWARD = INTERP_RATE(TEMP*KB/QE, REACTIONS(JR)%TABLE_TEMP, REACTIONS(JR)%TABLE_RATE)
-               END IF
-
-               RATE_OF_PROGRESS = K_FORWARD*NI*NJ ! [1/m3/s]
-
-               ! Subtract reactants
-               S(RHOI) = S(RHOI) - MI*RATE_OF_PROGRESS
-               S(MOMXI) = S(MOMXI) - MI*RATE_OF_PROGRESS*UXI
-               S(MOMYI) = S(MOMYI) - MI*RATE_OF_PROGRESS*UYI
-               S(ENEI) = S(ENEI) - MI*RATE_OF_PROGRESS*EI + RATE_OF_PROGRESS*REACTIONS(JR)%DELTAE(I)
-               !S(ENEJ) = S(ENEJ) - 0.5*MJ*RATE_OF_PROGRESS*(UXJ**2 + UYJ**2) ! Check, this is not the total energy I think.
-
-               ! Add products (might be fluid or background)
-
-               DO P = 1, REACTIONS(JR)%N_PROD
-                  IF (P == 1) P_SP_ID = REACTIONS(JR)%P1_SP_ID
-                  IF (P == 2) P_SP_ID = REACTIONS(JR)%P2_SP_ID
-                  IF (P == 3) P_SP_ID = REACTIONS(JR)%P3_SP_ID
-                  IF (P == 4) P_SP_ID = REACTIONS(JR)%P4_SP_ID
-
-                  IF (P_SP_ID .LE. N_SPECIES_FLUID) THEN ! Product is fluid
-                     RHOP  = (P_SP_ID-1)*Neq+1
-                     MOMXP = (P_SP_ID-1)*Neq+2
-                     MOMYP = (P_SP_ID-1)*Neq+3
-                     ENEP  = (P_SP_ID-1)*Neq+4
-
-                     MP = SPECIES(P_SP_ID)%MOLECULAR_MASS
-
-                     NP = prim(RHOP)/MP
-                     UXP = prim(MOMXP)
-                     UYP = prim(MOMYP)
-                     EP = U(ENEP)/prim(RHOP)
-                     TP = prim(ENEP)
-
-                     S(RHOP) = S(RHOP) + MP*RATE_OF_PROGRESS
-                     S(MOMXP) = S(MOMXP) + MP*RATE_OF_PROGRESS*UXP
-                     S(MOMYP) = S(MOMYP) + MP*RATE_OF_PROGRESS*UYP
-                     S(ENEP) = S(ENEP) + MP*RATE_OF_PROGRESS*EP + RATE_OF_PROGRESS*REACTIONS(JR)%DELTAE(P+2)
-
+                  IF (REACTIONS(JR)%TYPE == FIXED_RATE) THEN
+                     K_FORWARD = REACTIONS(JR)%CONSTANT_RATE
+                  ELSE IF (REACTIONS(JR)%TYPE == ARRHENIUS) THEN
+                     K_FORWARD = REACTIONS(JR)%A * TEMP**REACTIONS(JR)%N * EXP(-REACTIONS(JR)%TA / TEMP)
+                  ELSE IF (REACTIONS(JR)%TYPE == HARD_SPHERE) THEN
+                     K_FORWARD = PI*REACTIONS(JR)%DIAM**2 * SQRT(8*KB*TEMP/(PI*MIJ)) * EXP(-REACTIONS(JR)%TA / TEMP) &
+                     * (1. + REACTIONS(JR)%TA / TEMP)
+                  ELSE IF (REACTIONS(JR)%TYPE == TABULATED) THEN
+                     K_FORWARD = INTERP_RATE(TEMP*KB/QE, REACTIONS(JR)%TABLE_TEMP, REACTIONS(JR)%TABLE_RATE)
                   END IF
+
+                  RATE_OF_PROGRESS = K_FORWARD*NI*NJ ! [1/m3/s]
+
+                  ! Subtract reactants
+                  S(RHOI) = S(RHOI) - MI*RATE_OF_PROGRESS
+                  S(MOMXI) = S(MOMXI) - MI*RATE_OF_PROGRESS*UXI
+                  S(MOMYI) = S(MOMYI) - MI*RATE_OF_PROGRESS*UYI
+                  S(ENEI) = S(ENEI) - MI*RATE_OF_PROGRESS*EI + RATE_OF_PROGRESS*REACTIONS(JR)%DELTAE(I)
+                  !S(ENEJ) = S(ENEJ) - 0.5*MJ*RATE_OF_PROGRESS*(UXJ**2 + UYJ**2) ! Check, this is not the total energy I think.
+
+                  ! Add products (might be fluid or background)
+
+                  DO P = 1, REACTIONS(JR)%N_PROD
+                     IF (P == 1) P_SP_ID = REACTIONS(JR)%P1_SP_ID
+                     IF (P == 2) P_SP_ID = REACTIONS(JR)%P2_SP_ID
+                     IF (P == 3) P_SP_ID = REACTIONS(JR)%P3_SP_ID
+                     IF (P == 4) P_SP_ID = REACTIONS(JR)%P4_SP_ID
+
+                     IF (P_SP_ID .LE. N_SPECIES_FLUID) THEN ! Product is fluid
+                        RHOP  = (P_SP_ID-1)*Neq+1
+                        MOMXP = (P_SP_ID-1)*Neq+2
+                        MOMYP = (P_SP_ID-1)*Neq+3
+                        ENEP  = (P_SP_ID-1)*Neq+4
+
+                        MP = SPECIES(P_SP_ID)%MOLECULAR_MASS
+
+                        NP = prim(RHOP)/MP
+                        UXP = prim(MOMXP)
+                        UYP = prim(MOMYP)
+                        EP = U(ENEP)/prim(RHOP)
+                        TP = prim(ENEP)
+
+                        S(RHOP) = S(RHOP) + MP*RATE_OF_PROGRESS
+                        S(MOMXP) = S(MOMXP) + MP*RATE_OF_PROGRESS*UXP
+                        S(MOMYP) = S(MOMYP) + MP*RATE_OF_PROGRESS*UYP
+                        S(ENEP) = S(ENEP) + MP*RATE_OF_PROGRESS*EP + RATE_OF_PROGRESS*REACTIONS(JR)%DELTAE(P+2)
+
+                     END IF
+
+                  END DO
+
 
                END DO
 
-
             END DO
-
          END DO
-      END DO
-
+      END IF
 
 
 
@@ -695,8 +710,6 @@ module integration
       
       gamma = SPECIES(SP_ID)%GAMMA
 
-      !Minf = ux0/sqrt(SPECIES(SP_ID)%GAMMA*KB/SPECIES(SP_ID)%MOLECULAR_MASS*T0)
-      !WRITE(*,*) Minf
       Minf = 0.3
 
       !------------------------
@@ -803,6 +816,136 @@ module integration
          flux(4) = mdot*HL
       else
          mdot = Mface * aface * rhoR
+         flux(1) = mdot
+         flux(2) = mdot*uR + pflux*nx
+         flux(3) = mdot*vR + pflux*ny
+         flux(4) = mdot*HR
+      endif
+
+      invdt_adv = MAX(invdt_adv, 2.*aL/sqrt(A_ele), 2.*aR/sqrt(A_ele))
+
+      
+   end subroutine
+
+
+
+
+    subroutine compute_fluxes_SLAU2(U_L, U_R, nx, ny, flux, A_ele, SP_ID)
+
+      ! Computes fluxes at the interface between states U_L and U_R using the
+      ! SLAU2 method of Kitamura and Shima [https://doi.org/10.1016/j.jcp.2013.02.046]
+
+      implicit none
+      
+      real(8), intent(in)  :: U_L(4), U_R(4)
+      real(8), intent(in)  :: nx, ny
+      real(8), intent(out) :: flux(4)
+
+      INTEGER,                      intent(in)  :: SP_ID
+      real(kind=8),                 intent(in)  :: A_ele
+      
+      real(8) :: rhoL,uL,vL,pL,HL,aL
+      real(8) :: rhoR,uR,vR,pR,HR,aR
+      real(8) :: unL,unR
+      real(8) :: ML,MR
+      real(8) :: mdot
+
+      real(8) :: EL,ER
+      real(8) :: gamma
+      real(8) :: abar, unbar, Mhat, chi, Mbar, pbar, rhobar, betaL, betaR, deltap, deltarho, deltabeta
+      real(8) :: unbarL, unbarR, g, pflux
+      
+
+      gamma = SPECIES(SP_ID)%GAMMA
+
+      !------------------------
+      ! Left state
+      !------------------------
+      
+      rhoL = U_L(1)
+      uL   = U_L(2)/rhoL
+      vL   = U_L(3)/rhoL
+      EL   = U_L(4)
+      
+      pL = (gamma-1.d0)*(EL - 0.5d0*rhoL*(uL*uL + vL*vL))
+      HL = (EL + pL)/rhoL
+      aL = sqrt(gamma*pL/rhoL)
+      
+      !------------------------
+      ! Right state
+      !------------------------
+      
+      rhoR = U_R(1)
+      uR   = U_R(2)/rhoR
+      vR   = U_R(3)/rhoR
+      ER   = U_R(4)
+      
+      pR = (gamma-1.d0)*(ER - 0.5d0*rhoR*(uR*uR + vR*vR))
+      HR = (ER + pR)/rhoR
+      aR = sqrt(gamma*pR/rhoR)
+      
+      !------------------------
+      ! Normal velocity
+      !------------------------
+      
+      unL = uL*nx + vL*ny
+      unR = uR*nx + vR*ny
+      
+      !------------------------
+      ! Interface sound speed
+      !------------------------
+
+      abar = 0.5*(aL + aR)
+      
+      unbar = (rhoL*ABS(unL) + rhoR*ABS(unR))/(rhoL+rhoR)
+
+      Mhat = MIN(1.0, SQRT(0.5*(uL*uL + vL*vL + uR*uR + vR*vR)) / abar)
+
+      chi = (1.0 - Mhat)**2
+
+      Mbar = unbar/abar
+      pbar = 0.5*(pL+pR)
+      rhobar = 0.5*(rhoL+rhoR)
+
+      ML = unL/abar
+      MR = unR/abar
+
+      IF (ABS(ML) < 1.0) THEN
+         betaL = 0.25*(2.0-ML)*(ML+1.0)**2
+      ELSE
+         betaL = 0.5*(1.0+SIGN(1.d0,ML))
+      ENDIF
+
+      IF (ABS(MR) < 1.0) THEN
+         betaR = 0.25*(2.0+MR)*(MR-1.0)**2
+      ELSE
+         betaR = 0.5*(1.0+SIGN(1.d0,-MR))
+      ENDIF
+
+      deltap = pR-pL
+      deltarho = rhoR-rhoL
+      deltabeta = betaL-betaR
+
+      g = -MAX(MIN(ML, 0.0), -1.0) * MIN(MAX(MR, 0.0), 1.0)
+      
+      !------------------------
+      ! Flux
+      !------------------------
+
+      pflux = pbar !+ (0.5*deltabeta*(pL-pR)) + SQRT(0.5*(uL*uL + vL*vL + uR*uR + vR*vR)) * &
+                    !    (betaL + betaR - 1.0) * rhobar * abar
+      
+      unbarL = (1.-g)*unbar + g*ABS(unL)
+      unbarR = (1.-g)*unbar + g*ABS(unR)
+
+      mdot = 0.5*(rhoL*(unL+unbarL) + rhoR*(unR-unbarR) - chi/abar*deltap)
+
+      if (mdot >= 0.d0) then
+         flux(1) = mdot
+         flux(2) = mdot*uL + pflux*nx
+         flux(3) = mdot*vL + pflux*ny
+         flux(4) = mdot*HL
+      else
          flux(1) = mdot
          flux(2) = mdot*uR + pflux*nx
          flux(3) = mdot*vR + pflux*ny

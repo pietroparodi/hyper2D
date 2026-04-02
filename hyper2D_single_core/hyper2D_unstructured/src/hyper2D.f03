@@ -29,15 +29,22 @@ program hyper2D
 
    real(kind=8), dimension(:,:), allocatable :: U, U_new
 
-   integer      :: t_ID ! Variables for time integration
-   real(kind=8) :: dt, t_now, CFL_now
+   integer      :: t_ID, t_save_ID ! Variables for time integration
+   real(kind=8) :: dt, dt_now, t_now, CFL_now
+   LOGICAL :: SAVE_STEP
+   real(kind=8) :: t_end 
 
 
    CALL READINPUT()
 
    write(*,*) "Initializing solution..."
    allocate(U(N_SPECIES_FLUID*Neq,NCELLS), U_new(N_SPECIES_FLUID*Neq,NCELLS))
-   call initialize_solution(U) ! See the pde.f03 module
+
+   IF (BOOL_RESTART) THEN
+      CALL READ_RESTART(RESTART_FILENAME, U)
+   ELSE
+      call initialize_solution(U) ! See the pde.f03 module
+   END IF
    
    write(*,*) "Writing solution at time step", 0, "..."
    !call export_sol_vtk(0, U)
@@ -48,15 +55,27 @@ program hyper2D
    ! Nt = ceiling(t_end/dt) ! t_end and dt are defined in global_module.f90
    ! do t_ID = 1, Nt
 
+   t_end = dt_save * Nt
+
    t_now = 0.0d0   ! Init
    dt    = 1.0d-10  ! Very first time step
-   t_ID  = 0.0     ! Init
+   t_save_ID = 0
+   t_ID  = 0     ! Init
    
    do while( t_now .le. t_end)
 
       ! ------ Prepare variables ------
       t_ID  = t_ID + 1
-      t_now = t_now + dt
+      IF (t_now + dt .GE. dt_save*(t_save_ID+1)) THEN
+         SAVE_STEP = .TRUE.
+         t_save_ID = t_save_ID + 1
+         dt_now = dt_save*t_save_ID - t_now
+         t_now = dt_save*t_save_ID
+      ELSE
+         SAVE_STEP = .FALSE.
+         dt_now = dt
+         t_now = t_now + dt
+      END IF
 
       invdt_adv = 0.0 ! Global variable, init to zero
       invdt_cond = 0.0
@@ -64,22 +83,27 @@ program hyper2D
       invdt_coll = 0.0
 
       ! ------ Integrate by dt ------
-      call forward_Euler_step(U, U_new, dt)
+      call forward_Euler_step(U, U_new, dt_now)
 
       ! ----- Write solution to VTK, every ... time steps -----
-      if ( (t_ID .GE. DUMP_GRID_START) .AND. (mod(t_ID, DUMP_GRID_EVERY) .EQ. 0) ) then 
+      if ( SAVE_STEP ) then 
          write(*,*) "Writing solution at time step", t_ID, "..."
-         !call export_sol_vtk(t_ID, U)
-         CALL GRID_SAVE(t_ID, t_now, U)
+         CALL GRID_SAVE(t_save_ID, t_now, U)
+      end if
+
+      ! ----- Write state as binary file, every ... time steps -----
+      if ( SAVE_STEP .AND. (mod(t_save_ID, DUMP_STATE_EVERY) .EQ. 0) ) then 
+         write(*,*) "Writing restart file at time step", t_ID, "..."
+         CALL WRITE_RESTART(t_save_ID, U)
       end if
 
       ! ------ Estimate current Courant number and update time step -----
       CFL_now = MAX(invdt_adv,invdt_cond, invdt_diff, invdt_coll)*dt
       IF ( mod(t_ID, STATS_EVERY) .EQ. 0 ) THEN
          write(*,'(A,EN15.5,A,F10.5,A,ES14.7,A,A,F10.5,A,F10.5,A,F10.5,A,F10.5)') 'Time', t_now, &
-         ' [s]. Current CFL: ', CFL_now, '. dt = ', dt, '[s]', &
-         ' CFL Advection: ', invdt_adv*dt, ' CFL Conduction: ', invdt_cond*dt, &
-         ' CFL Diffusion: ', invdt_diff*dt, ' CFL Collisions: ', invdt_coll*dt
+         ' [s]. Current CFL: ', CFL_now, '. dt = ', dt_now, '[s]', &
+         ' CFL Advection: ', invdt_adv*dt_now, ' CFL Conduction: ', invdt_cond*dt_now, &
+         ' CFL Diffusion: ', invdt_diff*dt_now, ' CFL Collisions: ', invdt_coll*dt_now
       END IF
       dt = MIN(dt*CFL_target/CFL_now, dtmax)
 

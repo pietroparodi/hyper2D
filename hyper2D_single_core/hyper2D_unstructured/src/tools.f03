@@ -35,20 +35,21 @@ module tools
 
       character(len=20), dimension(:), allocatable :: prim_names
 
-      ALLOCATE(prim_names(N_SPECIES_FLUID*Neq))
+      ALLOCATE(prim_names(N_SPECIES_FLUID*5))
 
 
       DO I = 1, N_SPECIES_FLUID
-         J = 4*(I-1)
-         prim_names(J+1) = 'rho_'//TRIM(SPECIES(I)%NAME)
-         prim_names(J+2) = 'ux_'//TRIM(SPECIES(I)%NAME)
-         prim_names(J+3) = 'uy_'//TRIM(SPECIES(I)%NAME)
-         prim_names(J+4) = 'T_'//TRIM(SPECIES(I)%NAME)
+         J = 5*(I-1)
+         prim_names(J+1) = 'nrho_mean_'//TRIM(SPECIES(I)%NAME)
+         prim_names(J+2) = 'rho_mean_'//TRIM(SPECIES(I)%NAME)
+         prim_names(J+3) = 'vx_mean_'//TRIM(SPECIES(I)%NAME)
+         prim_names(J+4) = 'vy_mean_'//TRIM(SPECIES(I)%NAME)
+         prim_names(J+5) = 'Ttr_mean_'//TRIM(SPECIES(I)%NAME)
       END DO
 
       ! ----- Compute primitive variables on the grid ------
 
-      allocate(prim(N_SPECIES_FLUID*Neq,NCELLS))
+      allocate(prim(N_SPECIES_FLUID*5,NCELLS))
 
       prim = 0.0 ! Init
       do IC = 1, NCELLS
@@ -58,7 +59,8 @@ module tools
          END IF
          
          DO I = 1, N_SPECIES_FLUID
-            call compute_primitive_from_conserved(U((I-1)*Neq+1:I*Neq+1,IC), prim((I-1)*Neq+1:I*Neq+1,IC), I)
+            call compute_primitive_from_conserved(U((I-1)*Neq+1:(I-1)*Neq+4,IC), prim((I-1)*5+2:(I-1)*5+5,IC), I)
+            prim((I-1)*5+1,IC) = prim((I-1)*5+2,IC) / SPECIES(I)%MOLECULAR_MASS
          END DO
       end do
 
@@ -99,11 +101,11 @@ module tools
 
          WRITE(54321) 'CELL_DATA '//ITOA(NCELLS)//ACHAR(10)
 
-         WRITE(54321) 'FIELD FieldData '//ITOA( N_SPECIES_FLUID*Neq )//ACHAR(10)
+         WRITE(54321) 'FIELD FieldData '//ITOA( N_SPECIES_FLUID*5 )//ACHAR(10)
 
 
          ! Write per-cell value
-         DO eqID = 1, N_SPECIES_FLUID*Neq
+         DO eqID = 1, N_SPECIES_FLUID*5
 
             WRITE(54321) prim_names(eqID)//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
             WRITE(54321) prim(eqID,:), ACHAR(10)
@@ -143,12 +145,12 @@ module tools
  
          
          WRITE(54321,'(A,I10)') 'CELL_DATA', NCELLS
-         WRITE(54321,'(A,I10)') 'FIELD FieldData', N_SPECIES_FLUID*Neq
+         WRITE(54321,'(A,I10)') 'FIELD FieldData', N_SPECIES_FLUID*5
 
 
 
          ! Write per-cell value
-         DO eqID = 1, N_SPECIES_FLUID*Neq
+         DO eqID = 1, N_SPECIES_FLUID*5
             
             WRITE(54321,'(A,I10,I10,A8)') prim_names(eqID), 1, NCELLS, 'integer'
             WRITE(54321) prim(eqID,:)
@@ -358,6 +360,50 @@ module tools
       END IF
 
    END FUNCTION INTERP_RATE
+
+
+
+   SUBROUTINE WRITE_RESTART(TIMESTEP, U)
+
+      IMPLICIT NONE
+
+      INTEGER, intent(in) :: TIMESTEP
+      real(kind=8), dimension(:,:), intent(in) :: U
+      INTEGER :: ios
+
+      character(len=100) :: iomsg
+
+      CHARACTER(LEN=512)  :: filename
+
+      WRITE(filename, "(A,A8,I0.8)") TRIM(ADJUSTL(FLOWFIELD_SAVE_PATH)), "restart_", TIMESTEP ! Compose filename
+
+      ! Open file for writing
+      IF (BOOL_BINARY_OUTPUT) THEN
+         OPEN(1010, FILE=filename, ACCESS='STREAM', FORM='UNFORMATTED', STATUS='NEW', &
+         CONVERT='BIG_ENDIAN', IOSTAT=ios, IOMSG=iomsg)
+
+         IF (ios .NE. 0) THEN
+            CALL ERROR_ABORT('Attention, could not open restart file for writing! ABORTING.')
+         ENDIF
+
+         WRITE(1010, IOSTAT=ios) U
+         !IF (ios < 0) EXIT
+
+         CLOSE(1010)
+      ELSE
+         OPEN(1010, FILE=filename, STATUS='OLD', IOSTAT=ios)
+         
+         IF (ios .NE. 0) THEN
+            CALL ERROR_ABORT('Attention, could not open restart file for writing! ABORTING.')
+         ENDIF
+
+         WRITE(1010,*,IOSTAT=ios) U
+         !IF (ios < 0) EXIT
+
+         CLOSE(1010)
+      END IF
+
+   END SUBROUTINE
 
 
 end module 
