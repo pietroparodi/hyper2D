@@ -49,7 +49,7 @@ module integration
 
          DO I = 1, N_SPECIES_FLUID
             FIRST = (I-1)*Neq+1
-            LAST = I*Neq+1
+            LAST = I*Neq
             call compute_primitive_from_conserved(U(FIRST:LAST,eleID), Uprim(FIRST:LAST,eleID), I)
          END DO
       END DO
@@ -91,7 +91,7 @@ module integration
             ! Check what neighbor is it
             DO I = 1, N_SPECIES_FLUID
                FIRST = (I-1)*Neq+1
-               LAST = I*Neq+1
+               LAST = I*Neq
 
                IF (.NOT. FLUIDBOUNDARY) THEN ! +++++++++ INTERNAL CELL
 
@@ -146,7 +146,7 @@ module integration
 
 
             F_dot_n_wall = 0.d0
-            IF (neigh == -1) THEN ! +++++++++ BOUNDARY CELL
+            IF (FLUIDBOUNDARY) THEN ! +++++++++ BOUNDARY CELL
                dLR = SQRT(Acell)
                FACE_PG = U2D_GRID%CELL_EDGES_PG(intID,eleID)
                IF (GRID_BC(FACE_PG)%REACT) THEN
@@ -176,7 +176,7 @@ module integration
                   print*, 'Solution diverged, try with a smaller time step! Aborting.'
                   print*, 'Solution that diverged: ', U_new(:,eleID)
                   print*, 'in cell ID = ', eleID
-                  stop
+                  ERROR STOP
                end if
             end do
 
@@ -225,7 +225,7 @@ module integration
       
       DO I = 1, N_SPECIES_FLUID
          FIRST = (I-1)*Neq+1
-         LAST = I*Neq+1
+         LAST = I*Neq
          call compute_primitive_from_conserved(U(FIRST:LAST), prim(FIRST:LAST), I)
       END DO
 
@@ -423,7 +423,7 @@ module integration
       ! Compute exiting particle flux
       DO I = 1, N_SPECIES_FLUID
          FIRST = (I-1)*Neq+1
-         LAST = I*Neq+1
+         LAST = I*Neq
 
          CALL compute_primitive_from_conserved(U(FIRST:LAST), prim, I)
          rho = prim(1)
@@ -446,7 +446,7 @@ module integration
       ! Compute mass, momentum, and energy flux vector
       DO I = 1, N_SPECIES_FLUID
          FIRST = (I-1)*Neq+1
-         LAST = I*Neq+1
+         LAST = I*Neq
          CALL compute_primitive_from_conserved(U(FIRST:LAST), prim, I)
          ux = prim(2)
          uy = prim(3)
@@ -663,16 +663,6 @@ module integration
 
     
     end subroutine
-
-
-
-
-
-
-
-
-
-
 
 
     subroutine compute_fluxes_AUSMplusup(U_L, U_R, nx, ny, flux, A_ele, SP_ID)
@@ -932,8 +922,8 @@ module integration
       ! Flux
       !------------------------
 
-      pflux = pbar !+ (0.5*deltabeta*(pL-pR)) + SQRT(0.5*(uL*uL + vL*vL + uR*uR + vR*vR)) * &
-                    !    (betaL + betaR - 1.0) * rhobar * abar
+      pflux = pbar + (0.5*deltabeta*(pL-pR)) + SQRT(0.5*(uL*uL + vL*vL + uR*uR + vR*vR)) * &
+                     (betaL + betaR - 1.0) * rhobar * abar
       
       unbarL = (1.-g)*unbar + g*ABS(unL)
       unbarR = (1.-g)*unbar + g*ABS(unR)
@@ -977,19 +967,31 @@ module integration
       real(kind=8), dimension(Neq) :: prim
 
       real(kind=8) :: ux_L, ux_R, uy_L, uy_R, T_L, T_R, rho_L
-      real(kind=8) :: DUXDX, DUYDX, DUXDY, DUYDY, TAUXX, TAUXY, TAUYY, MU, DTDX, DTDY, UX, UY
+      real(kind=8) :: DUXDX, DUYDX, DUXDY, DUYDY, TAUXX, TAUXY, TAUYY, DTDX, DTDY, UX, UY
+      REAL(KIND=8) :: MU, KAPPA, CP
+      REAL(KIND=8) :: MU_LIM, KAPPA_LIM
 
 
       F_dot_n = 0.d0
 
       rho_L = U_L(1)
 
+      MU    = SPECIES(SP_ID)%MU
+      KAPPA = SPECIES(SP_ID)%KAPPA
+      CP    = SPECIES(SP_ID)%CP
+
+      MU_LIM = CFL_target*(A_ele*rho_L)/(6.*dt_target)
+      KAPPA_LIM = CFL_target*(A_ele*rho_L*CP)/(6.*dt_target)
+
+      MU = MIN(MU, MU_LIM)
+      KAPPA = MIN(KAPPA, KAPPA_LIM)
+
       DUXDX = 0.5*(gradU_L(1,2) + gradU_R(1,2))
       DUYDX = 0.5*(gradU_L(1,3) + gradU_R(1,3))
       DUXDY = 0.5*(gradU_L(2,2) + gradU_R(2,2))
       DUYDY = 0.5*(gradU_L(2,3) + gradU_R(2,3))
 
-      MU = SPECIES(SP_ID)%MU
+      
       TAUXX = 2./3.*MU*(2.*DUXDX-DUYDY)
       TAUYY = 2./3.*MU*(2.*DUYDY-DUXDX)
       TAUXY = MU*(DUXDY + DUYDX)
@@ -1017,17 +1019,17 @@ module integration
       call compute_primitive_from_conserved(U_R, prim, SP_ID)
       T_R = prim(4)
 
-      F_dot_n(4) = - SPECIES(SP_ID)%KAPPA*(T_R-T_L)/dLR
+      F_dot_n(4) = - KAPPA*(T_R-T_L)/dLR
 
-      !F_dot_n(4) = - (NX*DTDX + NY*DTDY)*SPECIES(SP_ID)%KAPPA &
+      !F_dot_n(4) = - (NX*DTDX + NY*DTDY)*KAPPA &
       !             - (UX*TAUXX + UY*TAUXY)*NX &
       !             - (UX*TAUXY + UY*TAUYY)*NY
 
       F_dot_n(4) = F_dot_n(4) - (UX*TAUXX + UY*TAUXY)*NX &
                               - (UX*TAUXY + UY*TAUYY)*NY
 
-      invdt_cond = MAX(invdt_cond, 6.*SPECIES(SP_ID)%KAPPA/(A_ele*rho_L*SPECIES(SP_ID)%CP))
-      invdt_diff = MAX(invdt_diff, 6.*SPECIES(SP_ID)%MU/(A_ele*rho_L))
+      invdt_cond = MAX(invdt_cond, 6.*KAPPA/(A_ele*rho_L*CP))
+      invdt_diff = MAX(invdt_diff, 6.*MU/(A_ele*rho_L))
 
 
 

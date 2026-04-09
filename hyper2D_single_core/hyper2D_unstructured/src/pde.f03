@@ -43,98 +43,7 @@ module pde
       END DO
 
 
-   end subroutine 
-
-   
-
-
-
-   subroutine compute_wall_flux(U, nx, ny, F_dot_n, A_ele, dLR, Tw, SP_ID)
-   !Not used
-
-      implicit none
-
-      real(kind=8), dimension(Neq), intent(in)  :: U
-      real(kind=8), dimension(Neq), intent(out) :: F_dot_n
-      real(kind=8), intent(in) :: nx, ny, A_ele, dLR, Tw
-      INTEGER,                      intent(in)  :: SP_ID
-
-      real(kind=8) :: rho, ux, uy,  T_L
-      real(kind=8), dimension(Neq) :: U_norm, prim
-
-      ! Wave speeds
-      real(kind=8) :: ws_max, ws_min
-
-
-      call compute_primitive_from_conserved(U, prim, SP_ID)
-
-
-      rho = prim(1)
-      ux =  prim(2)
-      uy =  prim(3)
-      T_L = prim(4)
-
-      !!!! ! Remove the velocity components normal to the wall 
-      !!!! ux = ux - (ux*nx + uy*ny)*nx
-      !!!! uy = uy - (ux*nx + uy*ny)*ny
-
-      ! Just say that these are zero. This will create an artificial numerical 
-      ! boundary layer. But we are OK with that.
-      ux = 0.0
-      uy = 0.0
-
-      ! Now (ux, uy) is tangential to the wall.
-      ! Build a new state
-      prim(2) = ux
-      prim(3) = uy
-
-
-      call compute_conserved_from_primitive(prim, U_norm, SP_ID)
-
-      call compute_flux_ws(U_norm, F_dot_n, nx, ny, ws_max, ws_min, SP_ID)
-
-      ! Update global maximum wave speed (used for setting the time step)
-      ws_max = MAX(abs(ws_max), abs(ws_min))
-
-      invdt_adv = MAX(invdt_adv, ws_max/sqrt(A_ele))
-
    end subroutine
-
-
-
-
-
-
-   subroutine compute_wall_flux_diffusive(U, gradU, nx, ny, F_dot_n, A_ele, dLR, Tw, SP_ID)
-   !Not used
-      
-      implicit none
-
-      real(kind=8), dimension(Neq), intent(in)  :: U
-      real(kind=8), dimension(2,Neq), intent(in)  :: gradU
-      real(kind=8), dimension(Neq), intent(out) :: F_dot_n
-      real(kind=8), intent(in) :: nx, ny, A_ele, dLR, Tw
-      INTEGER,                      intent(in)  :: SP_ID
-
-      real(kind=8) :: rho, ux, uy,  T_L
-      real(kind=8), dimension(Neq) :: prim
-
-
-      call compute_primitive_from_conserved(U, prim, SP_ID)
-
-
-      rho = prim(1)
-      ux =  prim(2)
-      uy =  prim(3)
-      T_L = prim(4)
-      
-      F_dot_n = 0.d0
-      ! Compute heat conduction
-      F_dot_n(4) = F_dot_n(4) + SPECIES(SP_ID)%KAPPA*(T_L-Tw)/dLR
-
-   end subroutine
-
-
 
 
    ! ============================================================
@@ -174,7 +83,6 @@ module pde
       real(kind=8), dimension(Neq) :: prim
 
       real(kind=8) :: ux, uy, u_norm
-      INTEGER :: I, J
 
       call compute_primitive_from_conserved(U, prim, SP_ID)
 

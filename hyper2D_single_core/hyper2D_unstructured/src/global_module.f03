@@ -15,7 +15,8 @@ module global_module
    REAL(KIND=8) :: ME   = 9.1093837139d-31               ! https://physics.nist.gov/cgi-bin/cuu/Value?me
    REAL(KIND=8) :: HP   = 6.62607015d-34                 ! https://physics.nist.gov/cgi-bin/cuu/Value?h
 
-   CHARACTER(LEN=256) :: GRID_FILENAME, RESTART_FILENAME
+   CHARACTER(LEN=256) :: GRID_FILENAME
+   CHARACTER(LEN=512) :: RESTART_FILENAME
    LOGICAL :: BOOL_BINARY_OUTPUT = .TRUE.
    CHARACTER*256 :: FLOWFIELD_SAVE_PATH = 'dumps/'
    LOGICAL :: BOOL_RESTART = .FALSE.
@@ -23,6 +24,7 @@ module global_module
 
    INTEGER      :: Nt = 0
    real(kind=8) :: dt_save = 0.d0
+   real(kind=8) :: dt_target = 1.0e-7
    real(kind=8) :: CFL_target = 0.25
    real(kind=8) :: dtmax      = 1.d-2
    INTEGER      :: STATS_EVERY

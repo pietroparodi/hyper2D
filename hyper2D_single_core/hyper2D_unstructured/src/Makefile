@@ -5,7 +5,7 @@
 CMPF  = gfortran -c
 LNK   = gfortran
 
-OPTS = -g -O0
+OPTS = -O3
 
 OBJS = global_module.o  initialization.o  tools.o  grid.o  pde.o  integration.o
 
@@ -13,9 +13,9 @@ OBJS = global_module.o  initialization.o  tools.o  grid.o  pde.o  integration.o
 
 all: hyper2D.exe
 
-debug: CMP += -g
+debug: CMPF += -g
 debug: LNK += -g
-debug: OPTF = -O0 -fimplicit-none -Wall -Wextra -fbacktrace -fcheck=all -ffpe-trap=invalid,zero,overflow
+debug: OPTS = -O0 -fimplicit-none -Wall -Wextra -fbacktrace -fcheck=all -ffpe-trap=invalid,zero,overflow -fbounds-check
 debug: hyper2D.exe
 
 

@@ -39,11 +39,13 @@ program hyper2D
 
    write(*,*) "Initializing solution..."
    allocate(U(N_SPECIES_FLUID*Neq,NCELLS), U_new(N_SPECIES_FLUID*Neq,NCELLS))
+   U = 0.d0
+   U_new = 0.d0
 
    IF (BOOL_RESTART) THEN
-      CALL READ_RESTART(RESTART_FILENAME, U)
+      CALL READ_RESTART(U)
    ELSE
-      call initialize_solution(U) ! See the pde.f03 module
+      CALL initialize_solution(U) ! See the pde.f03 module
    END IF
    
    write(*,*) "Writing solution at time step", 0, "..."

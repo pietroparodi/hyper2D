@@ -48,12 +48,12 @@ MODULE initialization
          IF (line=='Axisymmetric:')            READ(in1,*) AXI
 
          IF (line=='Wall_reactions_file:') THEN
-            READ(in1,*) WALL_REACTIONS_FILENAME
+            READ(in1,'(A)') WALL_REACTIONS_FILENAME
             CALL READ_WALL_REACTIONS(WALL_REACTIONS_FILENAME)
          END IF
 
          IF (line=='Mesh_file_SU2:') THEN
-            READ(in1,*) MESH_FILENAME
+            READ(in1,'(A)') MESH_FILENAME
             CALL READ_2D_UNSTRUCTURED_GRID_SU2(MESH_FILENAME)
          END IF
 
@@ -83,7 +83,7 @@ MODULE initialization
          ! ~~~~~~~~~~~~~  File output ~~~~~~~~~~~~~~~
 
          IF (line=='Output_path:') THEN
-            READ(in1,*) FLOWFIELD_SAVE_PATH
+            READ(in1,'(A)') FLOWFIELD_SAVE_PATH
          END IF
          IF (line=='Binary_output:')           READ(in1,*) BOOL_BINARY_OUTPUT
          !IF (line=='Dump_grid_every:')         READ(in1,*) DUMP_GRID_EVERY
@@ -95,7 +95,7 @@ MODULE initialization
 
          ! ~~~~~~~~~~~~~  Multifluid ~~~~~~~~~~~~~~~
          IF (line=='Species_file:') THEN
-            READ(in1,*) SPECIES_FILENAME
+            READ(in1,'(A)') SPECIES_FILENAME
             CALL READ_SPECIES(SPECIES_FILENAME)
          END IF
 
@@ -111,23 +111,23 @@ MODULE initialization
             BG_MIX = MIXTURE_NAME_TO_ID(BG_MIX_NAME)
          END IF
          IF (line=='Background_file:') THEN
-            READ(in1,*) BG_FILENAME
+            READ(in1,'(A)') BG_FILENAME
             CALL READ_BACKGROUND_FILE(BG_FILENAME)
          END IF
 
          IF (line=='VSS_parameters_file:')     THEN
-            READ(in1,*) VSS_PARAMS_FILENAME
+            READ(in1,'(A)') VSS_PARAMS_FILENAME
             CALL READ_VSS(VSS_PARAMS_FILENAME)
          END IF
 
          IF (line=='VSS_parameters_binary_file:')     THEN
-            READ(in1,*) VSS_PARAMS_FILENAME
+            READ(in1,'(A)') VSS_PARAMS_FILENAME
             CALL READ_VSS_BINARY(VSS_PARAMS_FILENAME)
          END IF
 
         ! ~~~~~~~~~~~~~  Reactions ~~~~~~~~~~~~~~~
          IF (line=='Reactions_file:') THEN
-            READ(in1,*) REACTIONS_FILENAME
+            READ(in1,'(A)') REACTIONS_FILENAME
             CALL READ_REACTIONS(REACTIONS_FILENAME)
          END IF
 
@@ -153,7 +153,7 @@ MODULE initialization
 
 
          IF (line=='Read_restart:') THEN
-            READ(in1,*) RESTART_FILENAME
+            READ(in1,'(A)') RESTART_FILENAME
             BOOL_RESTART = .TRUE.
          END IF
 
@@ -254,11 +254,11 @@ MODULE initialization
       
       CLOSE(in4) ! Close input file
 
-      ! DO I = 1, N_WALL_REACTIONS
-      !    WRITE(*,*) 'Wall reaction ', I, 'Has 1 reactant with id:', WALL_REACTIONS(I)%R_SP_ID
-      !    WRITE(*,*) WALL_REACTIONS(I)%N_PROD, 'products with ids:',  WALL_REACTIONS(I)%P1_SP_ID, ' and ', WALL_REACTIONS(I)%P2_SP_ID
-      !    WRITE(*,*) 'Parameters:', WALL_REACTIONS(I)%PROB
-      ! END DO
+      DO I = 1, N_WALL_REACTIONS
+         WRITE(*,*) 'Wall reaction ', I, 'Has 1 reactant with id:', WALL_REACTIONS(I)%R_SP_ID
+         WRITE(*,*) WALL_REACTIONS(I)%N_PROD, 'products with ids:',  WALL_REACTIONS(I)%P1_SP_ID, ' and ', WALL_REACTIONS(I)%P2_SP_ID
+         WRITE(*,*) 'Reaction probability:', WALL_REACTIONS(I)%PROB
+      END DO
 
    END SUBROUTINE READ_WALL_REACTIONS
 
@@ -1114,19 +1114,20 @@ MODULE initialization
    END SUBROUTINE DEF_INITIAL_STATE
 
 
-   SUBROUTINE READ_RESTART(filename, U)
+   SUBROUTINE READ_RESTART(U)
 
       IMPLICIT NONE
 
-      CHARACTER(LEN=256), intent(in) :: filename
       real(kind=8), dimension(:,:), intent(inout) :: U
       INTEGER :: ios
 
       character(len=100) :: iomsg
 
       ! Open file for reading
+      WRITE(*,*) 'Opening file ', RESTART_FILENAME, ' for restart.'
+
       IF (BOOL_BINARY_OUTPUT) THEN
-         OPEN(1010, FILE=filename, ACCESS='STREAM', FORM='UNFORMATTED', STATUS='OLD', &
+         OPEN(1025, FILE=RESTART_FILENAME, ACCESS='STREAM', FORM='UNFORMATTED', STATUS='OLD', &
          CONVERT='BIG_ENDIAN', IOSTAT=ios, IOMSG=iomsg)
 
          IF (ios .NE. 0) THEN
@@ -1134,21 +1135,19 @@ MODULE initialization
             CALL ERROR_ABORT('Attention, restart file not found! ABORTING.')
          ENDIF
 
-         READ(1010, IOSTAT=ios) U
-         !IF (ios < 0) EXIT
+         READ(1025, IOSTAT=ios) U
 
-         CLOSE(1010)
+         CLOSE(1025)
       ELSE
-         OPEN(1010, FILE=filename, STATUS='OLD', IOSTAT=ios)
+         OPEN(1025, FILE=RESTART_FILENAME, STATUS='OLD', IOSTAT=ios)
          
          IF (ios .NE. 0) THEN
             CALL ERROR_ABORT('Attention, restart file not found! ABORTING.')
          ENDIF
 
-         READ(1010,*,IOSTAT=ios) U
-         !IF (ios < 0) EXIT
+         READ(1025,*,IOSTAT=ios) U
 
-         CLOSE(1010)
+         CLOSE(1025)
       END IF
 
    END SUBROUTINE

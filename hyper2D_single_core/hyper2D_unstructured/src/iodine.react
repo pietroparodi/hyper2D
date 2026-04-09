@@ -1,0 +1,12 @@
+! R1 + R2 --> P1 + P2 + P3 + P4
+! R1 must be fluid, R2 must be in the background.
+! constant <rate>
+! hardsphere <diameter> <activation temperature>
+! arrhenius <coefficient A> <exponent n> <activation temperature>
+! tabulated <file name>
+! deltaE_R1 deltaE_R2 deltaE_P1, ...
+
+I2 + e --> I + I + e
+tabulated    'rates/I2_e_DISSOCIATION_rate.txt'
+0.0 -2.47e-19 1.833e-19 1.833e-19 -3.665e-19
+

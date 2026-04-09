@@ -1,0 +1,65 @@
+! Hyper2D input file
+
+Timestep:
+    3e-6
+
+Number_of_timesteps:
+    1000
+
+Max_timestep:
+   1.0e-2
+
+Target_CFL:
+   0.25
+
+Stats_every:
+   1
+
+Output_path:
+   'dumps/'
+
+Binary_output:
+   .TRUE.
+
+Dump_state_every:
+   10000
+
+Species_file:
+   'iodine.species'
+   
+Number_fluid_species:
+   2
+
+Def_mixture:
+   Initial   I 0.5   I2 0.5
+
+Initial_state:
+   Initial   9.65729e21   0.0   0.0   0.0   300.0
+
+Flux_function:
+   AUSM
+
+
+Axisymmetric:
+   .TRUE.
+
+Wall_reactions_file:
+   'iodine.wall'
+   
+Reactions_file:
+   'iodine.react'
+
+Mesh_file_SU2:
+   'testgrid.su2'
+
+Background_file:
+   'background.vtk'
+
+Boundary_condition:
+   Wall   wall
+
+Boundary_condition:
+   Axis   symmetry
+
+Boundary_condition:
+   Wall   react
