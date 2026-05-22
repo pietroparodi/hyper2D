@@ -406,4 +406,76 @@ module tools
    END SUBROUTINE
 
 
+
+   SUBROUTINE CHECKS(TIME, U_CONS)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:), INTENT(IN) :: U_CONS
+      REAL(KIND=8), INTENT(IN) :: TIME
+
+      INTEGER                            :: JS, JC, FIRST
+   
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: TOT_MASS, TOT_ENERGY
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:) :: TOT_MOMENTUM
+   
+      REAL(KIND=8) :: VOL
+      CHARACTER*256                      :: file_name
+      CHARACTER*2048                     :: HEADER_STRING
+      LOGICAL                            :: FILE_EXISTS
+
+      ALLOCATE(TOT_MASS(N_SPECIES_FLUID))
+      ALLOCATE(TOT_ENERGY(N_SPECIES_FLUID))
+      ALLOCATE(TOT_MOMENTUM(3,N_SPECIES_FLUID))
+
+      TOT_MASS = 0.d0
+      TOT_MOMENTUM = 0.d0
+      TOT_ENERGY = 0.d0
+
+      DO JC = 1, NCELLS
+         DO JS = 1, N_SPECIES_FLUID
+            FIRST = (JS-1)*Neq+1
+            VOL = U2D_GRID%CELL_VOLUMES(JC)
+            TOT_MASS(JS) = TOT_MASS(JS) + U_CONS(FIRST, JC)*VOL
+            TOT_MOMENTUM(1, JS) = TOT_MOMENTUM(1, JS) + U_CONS(FIRST+1, JC)*VOL
+            TOT_MOMENTUM(2, JS) = TOT_MOMENTUM(2, JS) + U_CONS(FIRST+2, JC)*VOL
+            TOT_MOMENTUM(3, JS) = 0.d0
+            TOT_ENERGY(JS) = TOT_ENERGY(JS) + U_CONS(FIRST+3, JC)*VOL
+         END DO
+      END DO
+
+      WRITE(file_name,'(A, A)') TRIM(ADJUSTL(FLOWFIELD_SAVE_PATH)), 'conservation_checks'
+
+      INQUIRE(FILE=file_name, EXIST=FILE_EXISTS)
+
+      OPEN(54331, FILE=file_name, POSITION='append', STATUS='unknown', ACTION='write')
+      IF (.NOT. FILE_EXISTS) THEN
+         HEADER_STRING = ''
+         HEADER_STRING = TRIM(HEADER_STRING) // 'time'
+         DO JS = 1, N_SPECIES
+            HEADER_STRING = TRIM(HEADER_STRING) // ' mass_' // TRIM(SPECIES(JS)%NAME)
+         END DO
+         HEADER_STRING = TRIM(HEADER_STRING) // ' totmass'
+         DO JS = 1, N_SPECIES
+            HEADER_STRING = TRIM(HEADER_STRING) // ' xmom_' // TRIM(SPECIES(JS)%NAME) // ' ' &
+                                          // 'ymom_' // TRIM(SPECIES(JS)%NAME) // ' ' &
+                                          // 'zmom_' // TRIM(SPECIES(JS)%NAME)
+         END DO
+         HEADER_STRING = TRIM(HEADER_STRING) // ' totxmom totymom totzmom'
+         DO JS = 1, N_SPECIES
+            HEADER_STRING = TRIM(HEADER_STRING) // ' ene_' // TRIM(SPECIES(JS)%NAME)
+         END DO
+         HEADER_STRING = TRIM(HEADER_STRING) // ' totene'
+
+         WRITE(54331,*) TRIM(HEADER_STRING)
+      END IF
+
+      WRITE(54331,*) TIME, TOT_MASS, SUM(TOT_MASS), TOT_MOMENTUM, SUM(TOT_MOMENTUM, DIM=2), &
+      TOT_ENERGY, SUM(TOT_ENERGY)
+      CLOSE(54331)
+
+
+   END SUBROUTINE CHECKS
+
+
 end module 

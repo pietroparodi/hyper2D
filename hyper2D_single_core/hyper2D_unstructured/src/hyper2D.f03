@@ -32,7 +32,9 @@ program hyper2D
    integer      :: t_ID, t_save_ID ! Variables for time integration
    real(kind=8) :: dt, dt_now, t_now, CFL_now
    LOGICAL :: SAVE_STEP
-   real(kind=8) :: t_end 
+   real(kind=8) :: t_end
+   REAL(KIND=8) :: EST_TIME, START_CPU_TIME, CURRENT_CPU_TIME
+   INTEGER :: EST_TIME_H, EST_TIME_M
 
 
    CALL READINPUT()
@@ -53,6 +55,8 @@ program hyper2D
    CALL GRID_SAVE(0, 0.d0, U)
 
    ! $$$$$$$$$$$ Integrate in time $$$$$$$$$$$$$
+
+   CALL CPU_TIME(START_CPU_TIME)
 
    ! Nt = ceiling(t_end/dt) ! t_end and dt are defined in global_module.f90
    ! do t_ID = 1, Nt
@@ -99,13 +103,28 @@ program hyper2D
          CALL WRITE_RESTART(t_save_ID, U)
       end if
 
+      ! ----- Write the conservation checks file -----
+      if ( mod(t_ID, CHECKS_EVERY) .EQ. 0 ) then 
+         CALL CHECKS(t_now, U)
+      end if
+
       ! ------ Estimate current Courant number and update time step -----
       CFL_now = MAX(invdt_adv,invdt_cond, invdt_diff, invdt_coll)*dt
       IF ( mod(t_ID, STATS_EVERY) .EQ. 0 ) THEN
-         write(*,'(A,EN15.5,A,F10.5,A,ES14.7,A,A,F10.5,A,F10.5,A,F10.5,A,F10.5)') 'Time', t_now, &
-         ' [s]. Current CFL: ', CFL_now, '. dt = ', dt_now, '[s]', &
-         ' CFL Advection: ', invdt_adv*dt_now, ' CFL Conduction: ', invdt_cond*dt_now, &
-         ' CFL Diffusion: ', invdt_diff*dt_now, ' CFL Collisions: ', invdt_coll*dt_now
+
+         CALL CPU_TIME(CURRENT_CPU_TIME)
+         CURRENT_CPU_TIME = CURRENT_CPU_TIME - START_CPU_TIME 
+         EST_TIME = (t_end-t_now)/(t_now)*CURRENT_CPU_TIME
+         EST_TIME_H = INT(EST_TIME/3600.d0)
+         EST_TIME_M = INT((EST_TIME - EST_TIME_H*3600.d0)/60.d0)
+
+
+         write(*,'(A,EN15.5,A,I5,A,I2,A,A,F10.5,A,ES14.7,A,A,F10.5,A,F10.5,A,F10.5,A,F10.5)') &
+         'Time', t_now, &
+         ' [s] - est. time required: ', EST_TIME_H, ' [h] ' , EST_TIME_M, ' [m]',&
+         ' - Current CFL: ', CFL_now, '. dt = ', dt_now, '[s]', &
+         ' - CFL Advection: ', invdt_adv*dt_now, ' - CFL Conduction: ', invdt_cond*dt_now, &
+         ' - CFL Diffusion: ', invdt_diff*dt_now, ' - CFL Collisions: ', invdt_coll*dt_now
       END IF
       dt = MIN(dt*CFL_target/CFL_now, dtmax)
 

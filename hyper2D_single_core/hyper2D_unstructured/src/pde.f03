@@ -48,13 +48,12 @@ module pde
 
    ! ============================================================
 
-   subroutine compute_wall_state(U, nx, ny, U_sym, SP_ID)
+   subroutine compute_wall_state(U, U_sym, SP_ID)
 
       implicit none
 
       real(kind=8), dimension(Neq), intent(in)  :: U
       real(kind=8), dimension(Neq), intent(out) :: U_sym
-      real(kind=8), intent(in) :: nx, ny
       INTEGER,                      intent(in)  :: SP_ID
 
       real(kind=8), dimension(Neq) :: prim

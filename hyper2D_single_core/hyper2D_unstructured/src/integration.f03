@@ -107,8 +107,7 @@ module integration
                      U_neigh = GRID_BC(FACE_PG)%U_BOUND(FIRST:LAST)
                      gradUprim_neigh = gradUprim(:,FIRST:LAST,eleID)
                   else if (GRID_BC(FACE_PG)%PARTICLE_BC == WALL) then ! ++++++++ WALL BOUNDARY ++++++++++++++++++++
-                     call compute_wall_state(U(FIRST:LAST,eleID), &
-                     nx, ny, U_wall, I)
+                     call compute_wall_state(U(FIRST:LAST,eleID), U_wall, I)
                      U_neigh = U_wall
                      gradUprim_neigh = gradUprim(:,FIRST:LAST,eleID)
                   else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
@@ -152,6 +151,7 @@ module integration
                IF (GRID_BC(FACE_PG)%REACT) THEN
                   !WRITE(*,*) F_dot_n_hyper
                   F_dot_n_hyper = 0.d0
+                  F_dot_n_diff = 0.d0
                   !WRITE(*,*) 'Set zero flux for cell ', eleID, ' face ', intID
                   CALL compute_wall_fluxes(U(:,eleID), nx, ny, F_dot_n_wall)
                   !WRITE(*,*) F_dot_n_hyper
@@ -401,6 +401,91 @@ module integration
 
 
    SUBROUTINE compute_wall_fluxes(U, nx, ny, F_dot_n_wall)
+
+      ! This subroutine computes the flux at the interface with a solid
+      ! surface. First, the exiting mass fluxes for eache species are computed,
+      ! and then the entering fluxes due to surface catalysis are computed.
+
+      implicit none
+
+      real(kind=8), dimension(:),   intent(in) :: U
+      real(kind=8),                 intent(in) :: nx, ny
+      real(kind=8), dimension(:), intent(out)  :: F_dot_n_wall
+
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: Ndotout, Ndotin
+      REAL(KIND=8), DIMENSION(Neq) :: prim
+      INTEGER :: JR, I, FIRST, LAST, P1_SP_ID, R_SP_ID
+      REAL(KIND=8) :: M, T, rho, ux, uy, udotn, Pflux, SN, Pout, tau
+
+      ALLOCATE(Ndotout(N_SPECIES_FLUID))
+      ALLOCATE(Ndotin(N_SPECIES_FLUID))
+      
+      ! Compute exiting particle flux
+      DO I = 1, N_SPECIES_FLUID
+         FIRST = (I-1)*Neq+1
+         LAST = I*Neq
+
+         CALL compute_primitive_from_conserved(U(FIRST:LAST), prim, I)
+         rho = prim(1)
+         ux = prim(2)
+         uy = prim(3)
+         T = prim(4)
+         M = SPECIES(I)%MOLECULAR_MASS
+         SN = (ux*nx + uy*ny)*SQRT(M/(2.*KB*T))
+         Ndotout(I) = rho/M*SQRT(KB*T/(2.*PI*M)) * (EXP(-SN**2) + SQRT(PI)*SN*(1+ERF(SN)))
+      END DO
+
+      ! Compute entering particle flux
+      DO JR = 1, N_WALL_REACTIONS
+         IF (WALL_REACTIONS(JR)%N_PROD == 1) THEN
+            P1_SP_ID = WALL_REACTIONS(JR)%P1_SP_ID
+            R_SP_ID = WALL_REACTIONS(JR)%R_SP_ID
+            Ndotin(P1_SP_ID) = Ndotin(P1_SP_ID) + WALL_REACTIONS(JR)%PROB * Ndotout(R_SP_ID)
+         END IF
+      END DO
+
+
+
+      ! Compute mass, momentum, and energy flux vector
+      DO I = 1, N_SPECIES_FLUID
+         FIRST = (I-1)*Neq+1
+         LAST = I*Neq
+         CALL compute_primitive_from_conserved(U(FIRST:LAST), prim, I)
+         rho = prim(1)
+         ux = prim(2)
+         uy = prim(3)
+         T = prim(4)
+         M = SPECIES(I)%MOLECULAR_MASS
+         udotn = ux*nx + uy*ny
+         SN = udotn*SQRT(M/(2.*KB*T))
+
+         ! Mass
+         F_dot_n_wall(FIRST) = M * (Ndotout(I) - Ndotin(I))
+
+         ! Momentum
+         Pout = rho/M*KB*T * (SN/SQRT(PI)*EXP(-SN**2) + (0.5+SN**2)*(1+ERF(SN)))
+         Pflux = Pout &
+         + Ndotin(I)*0.5*SQRT(2.*PI*M*KB*Tw)
+         tau = Pout * SQRT(M/(2.*KB*T)) *(EXP(-SN**2)/SQRT(PI) + SN*(1+ERF(SN)))
+         F_dot_n_wall(FIRST+1) = nx*Pflux + (ux - udotn*nx)*tau
+         F_dot_n_wall(FIRST+2) = ny*Pflux + (uy - udotn*ny)*tau
+
+         ! Energy
+         F_dot_n_wall(FIRST+3) = Ndotout(I)*(0.5*M*(ux*ux+uy*uy) + 2.5*KB*T) &
+         - 1./8.*rho/M * SQRT(8.*KB*T/(PI*M)) * KB*T*EXP(-SN**2) &
+         - Ndotin(I)*(2.*KB*Tw)
+
+      END DO
+
+      !WRITE(*,*) F_dot_n_wall
+
+   END SUBROUTINE
+
+
+
+
+
+   SUBROUTINE compute_wall_fluxes_old(U, nx, ny, F_dot_n_wall)
 
       ! This subroutine computes the flux at the interface with a solid
       ! surface. First, the exiting mass fluxes for eache species are computed,
@@ -820,7 +905,7 @@ module integration
 
 
 
-    subroutine compute_fluxes_SLAU2(U_L, U_R, nx, ny, flux, A_ele, SP_ID)
+   subroutine compute_fluxes_SLAU2(U_L, U_R, nx, ny, flux, A_ele, SP_ID)
 
       ! Computes fluxes at the interface between states U_L and U_R using the
       ! SLAU2 method of Kitamura and Shima [https://doi.org/10.1016/j.jcp.2013.02.046]
@@ -983,8 +1068,8 @@ module integration
       MU_LIM = CFL_target*(A_ele*rho_L)/(6.*dt_target)
       KAPPA_LIM = CFL_target*(A_ele*rho_L*CP)/(6.*dt_target)
 
-      MU = MIN(MU, MU_LIM)
-      KAPPA = MIN(KAPPA, KAPPA_LIM)
+      !MU = MIN(MU, MU_LIM)
+      !KAPPA = MIN(KAPPA, KAPPA_LIM)
 
       DUXDX = 0.5*(gradU_L(1,2) + gradU_R(1,2))
       DUYDX = 0.5*(gradU_L(1,3) + gradU_R(1,3))

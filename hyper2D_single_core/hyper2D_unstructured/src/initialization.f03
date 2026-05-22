@@ -74,6 +74,8 @@ MODULE initialization
          IF (line=='Max_timestep:')            READ(in1,*) dtmax
          IF (line=='Target_CFL:')              READ(in1,*) CFL_target
          IF (line=='Stats_every:')             READ(in1,*) STATS_EVERY
+         IF (line=='Checks_every:')            READ(in1,*) CHECKS_EVERY
+
          IF (line=='Number_fluid_species:') THEN
             READ(in1,*) N_SPECIES_FLUID
             IF (N_SPECIES_FLUID > N_SPECIES) CALL ERROR_ABORT( &

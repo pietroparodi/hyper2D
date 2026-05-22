@@ -28,7 +28,7 @@ module global_module
    real(kind=8) :: CFL_target = 0.25
    real(kind=8) :: dtmax      = 1.d-2
    INTEGER      :: STATS_EVERY
-   
+   INTEGER      :: CHECKS_EVERY = 100
    INTEGER      :: DUMP_STATE_EVERY
 
    
