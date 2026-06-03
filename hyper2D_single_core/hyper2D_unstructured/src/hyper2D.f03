@@ -44,11 +44,17 @@ program hyper2D
    U = 0.d0
    U_new = 0.d0
 
+   allocate(MU_GRID(N_SPECIES_FLUID,NCELLS), KAPPA_GRID(N_SPECIES_FLUID,N_SPECIES_FLUID,NCELLS))
+
+
    IF (BOOL_RESTART) THEN
       CALL READ_RESTART(U)
    ELSE
       CALL initialize_solution(U) ! See the pde.f03 module
    END IF
+   
+   ! ------ Compute transport properties ------
+   CALL compute_transport(U)
    
    write(*,*) "Writing solution at time step", 0, "..."
    !call export_sol_vtk(0, U)
@@ -87,6 +93,9 @@ program hyper2D
       invdt_cond = 0.0
       invdt_diff = 0.0
       invdt_coll = 0.0
+
+      ! ------ Compute transport properties ------
+      CALL compute_transport(U)
 
       ! ------ Integrate by dt ------
       call forward_Euler_step(U, U_new, dt_now)

@@ -34,6 +34,11 @@ module global_module
    
    integer, parameter :: Neq = 4 ! Number of equations (per-species)
 
+
+   real(kind=8), dimension(:,:), allocatable :: MU_GRID
+   real(kind=8), dimension(:,:,:), allocatable :: KAPPA_GRID
+
+
    !!!! TEST TEST TEST !!! ! Reconstruction order 
    !!!! TEST TEST TEST !!! ! integer, parameter :: reconstr_order = 0 ! 0: no reconstruction -> first order in space
    !!!! TEST TEST TEST !!! integer, parameter :: reconstr_order = 1 ! 1: linear reconstruction -> second order in space
@@ -159,5 +164,16 @@ module global_module
 
    INTEGER(KIND(SLAU)) :: FLUX_FUNCTION = SLAU
    
+
+
+   TYPE TABULATED_DATA
+      INTEGER :: NROWS, NCOLS
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: ROW_IDX, COL_IDX
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:) :: DATA
+      LOGICAL :: INITIALIZED = .FALSE.
+   END TYPE TABULATED_DATA
+
+   TYPE(TABULATED_DATA) :: TABLE_MU_I, TABLE_MU_I2, &
+   TABLE_KAPPA_I_I, TABLE_KAPPA_I_I2, TABLE_KAPPA_I2_I, TABLE_KAPPA_I2_I2
 
 end module

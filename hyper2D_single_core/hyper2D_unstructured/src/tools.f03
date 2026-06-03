@@ -33,9 +33,10 @@ module tools
       CHARACTER*256                      :: file_name
       INTEGER                            :: I, J, IC
 
-      character(len=20), dimension(:), allocatable :: prim_names
+      character(len=20), dimension(:), allocatable :: prim_names, transport_names
 
       ALLOCATE(prim_names(N_SPECIES_FLUID*5))
+      ALLOCATE(transport_names(N_SPECIES_FLUID*3))
 
 
       DO I = 1, N_SPECIES_FLUID
@@ -45,6 +46,13 @@ module tools
          prim_names(J+3) = 'vx_mean_'//TRIM(SPECIES(I)%NAME)
          prim_names(J+4) = 'vy_mean_'//TRIM(SPECIES(I)%NAME)
          prim_names(J+5) = 'Ttr_mean_'//TRIM(SPECIES(I)%NAME)
+      END DO
+
+      DO I = 1, N_SPECIES_FLUID
+         J = 3*(I-1)
+         transport_names(J+1) = 'mu_'//TRIM(SPECIES(I)%NAME)
+         transport_names(J+2) = 'kappa_'//TRIM(SPECIES(I)%NAME)//'I'
+         transport_names(J+3) = 'kappa_'//TRIM(SPECIES(I)%NAME)//'I2'
       END DO
 
       ! ----- Compute primitive variables on the grid ------
@@ -101,7 +109,7 @@ module tools
 
          WRITE(54321) 'CELL_DATA '//ITOA(NCELLS)//ACHAR(10)
 
-         WRITE(54321) 'FIELD FieldData '//ITOA( N_SPECIES_FLUID*5 )//ACHAR(10)
+         WRITE(54321) 'FIELD FieldData '//ITOA( N_SPECIES_FLUID*8 )//ACHAR(10)
 
 
          ! Write per-cell value
@@ -111,6 +119,24 @@ module tools
             WRITE(54321) prim(eqID,:), ACHAR(10)
 
          END DO
+
+
+         WRITE(54321) 'mu_I2 '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+         WRITE(54321) MU_GRID(1,:), ACHAR(10)
+         WRITE(54321) 'mu_I '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+         WRITE(54321) MU_GRID(2,:), ACHAR(10)
+         
+         WRITE(54321) 'kappa_I2_I2 '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+         WRITE(54321) KAPPA_GRID(1,1,:), ACHAR(10)
+
+         WRITE(54321) 'kappa_I2_I '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+         WRITE(54321) KAPPA_GRID(2,1,:), ACHAR(10)
+
+         WRITE(54321) 'kappa_I_I2 '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+         WRITE(54321) KAPPA_GRID(1,2,:), ACHAR(10)
+
+         WRITE(54321) 'kappa_I_I '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+         WRITE(54321) KAPPA_GRID(2,2,:), ACHAR(10)
 
          CLOSE(54321)
          
@@ -476,6 +502,262 @@ module tools
 
 
    END SUBROUTINE CHECKS
+
+
+
+   FUNCTION MU_I(T, X_I) RESULT(MU)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: T, X_I
+      REAL(KIND=8) :: MU
+
+      IF (.NOT. TABLE_MU_I%INITIALIZED) THEN
+         CALL read_2d_table('mu_I.txt', TABLE_MU_I%NROWS, TABLE_MU_I%NCOLS, &
+         TABLE_MU_I%ROW_IDX, TABLE_MU_I%COL_IDX, TABLE_MU_I%DATA)
+         TABLE_MU_I%INITIALIZED = .TRUE.
+      END IF
+      MU = interpolate_2d_table(TABLE_MU_I%ROW_IDX, TABLE_MU_I%COL_IDX, &
+      TABLE_MU_I%DATA, T, X_I)
+
+   END FUNCTION
+
+   FUNCTION MU_I2(T, X_I) RESULT(MU)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: T, X_I
+      REAL(KIND=8) :: MU
+
+      IF (.NOT. TABLE_MU_I2%INITIALIZED) THEN
+         CALL read_2d_table('mu_I2.txt', TABLE_MU_I2%NROWS, TABLE_MU_I2%NCOLS, &
+         TABLE_MU_I2%ROW_IDX, TABLE_MU_I2%COL_IDX, TABLE_MU_I2%DATA)
+         TABLE_MU_I2%INITIALIZED = .TRUE.
+      END IF
+      MU = interpolate_2d_table(TABLE_MU_I2%ROW_IDX, TABLE_MU_I2%COL_IDX, &
+      TABLE_MU_I2%DATA, T, X_I)
+
+   END FUNCTION
+
+   FUNCTION KAPPA_I_I(T, X_I) RESULT(KAPPA)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: T, X_I
+      REAL(KIND=8) :: KAPPA
+
+      IF (.NOT. TABLE_KAPPA_I_I%INITIALIZED) THEN
+         CALL read_2d_table('kappa_I_I.txt', TABLE_KAPPA_I_I%NROWS, TABLE_KAPPA_I_I%NCOLS, &
+         TABLE_KAPPA_I_I%ROW_IDX, TABLE_KAPPA_I_I%COL_IDX, TABLE_KAPPA_I_I%DATA)
+         TABLE_KAPPA_I_I%INITIALIZED = .TRUE.
+      END IF
+      KAPPA = interpolate_2d_table(TABLE_KAPPA_I_I%ROW_IDX, TABLE_KAPPA_I_I%COL_IDX, &
+      TABLE_KAPPA_I_I%DATA, T, X_I)
+
+   END FUNCTION
+
+   FUNCTION KAPPA_I_I2(T, X_I) RESULT(KAPPA)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: T, X_I
+      REAL(KIND=8) :: KAPPA
+
+      IF (.NOT. TABLE_KAPPA_I_I2%INITIALIZED) THEN
+         CALL read_2d_table('kappa_I_I2.txt', TABLE_KAPPA_I_I2%NROWS, TABLE_KAPPA_I_I2%NCOLS, &
+         TABLE_KAPPA_I_I2%ROW_IDX, TABLE_KAPPA_I_I2%COL_IDX, TABLE_KAPPA_I_I2%DATA)
+         TABLE_KAPPA_I_I2%INITIALIZED = .TRUE.
+      END IF
+      KAPPA = interpolate_2d_table(TABLE_KAPPA_I_I2%ROW_IDX, TABLE_KAPPA_I_I2%COL_IDX, &
+      TABLE_KAPPA_I_I2%DATA, T, X_I)
+
+   END FUNCTION
+
+   FUNCTION KAPPA_I2_I(T, X_I) RESULT(KAPPA)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: T, X_I
+      REAL(KIND=8) :: KAPPA
+
+      IF (.NOT. TABLE_KAPPA_I2_I%INITIALIZED) THEN
+         CALL read_2d_table('kappa_I2_I.txt', TABLE_KAPPA_I2_I%NROWS, TABLE_KAPPA_I2_I%NCOLS, &
+         TABLE_KAPPA_I2_I%ROW_IDX, TABLE_KAPPA_I2_I%COL_IDX, TABLE_KAPPA_I2_I%DATA)
+         TABLE_KAPPA_I2_I%INITIALIZED = .TRUE.
+      END IF
+      KAPPA = interpolate_2d_table(TABLE_KAPPA_I2_I%ROW_IDX, TABLE_KAPPA_I2_I%COL_IDX, &
+      TABLE_KAPPA_I2_I%DATA, T, X_I)
+
+   END FUNCTION
+
+   FUNCTION KAPPA_I2_I2(T, X_I) RESULT(KAPPA)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: T, X_I
+      REAL(KIND=8) :: KAPPA
+
+      IF (.NOT. TABLE_KAPPA_I2_I2%INITIALIZED) THEN
+         CALL read_2d_table('kappa_I2_I2.txt', TABLE_KAPPA_I2_I2%NROWS, TABLE_KAPPA_I2_I2%NCOLS, &
+         TABLE_KAPPA_I2_I2%ROW_IDX, TABLE_KAPPA_I2_I2%COL_IDX, TABLE_KAPPA_I2_I2%DATA)
+         TABLE_KAPPA_I2_I2%INITIALIZED = .TRUE.
+      END IF
+      KAPPA = interpolate_2d_table(TABLE_KAPPA_I2_I2%ROW_IDX, TABLE_KAPPA_I2_I2%COL_IDX, &
+      TABLE_KAPPA_I2_I2%DATA, T, X_I)
+
+   END FUNCTION
+
+
+   function interpolate_2d_table(row_indices, col_indices, table_data, row_val, col_val) result(interp_val)
+      implicit none
+
+      real(KIND=8), intent(in) :: row_indices(:), col_indices(:), table_data(:,:)
+      real(KIND=8), intent(in) :: row_val, col_val
+      integer :: ierr
+      real(KIND=8) :: interp_val
+
+      integer :: nrows, ncols, i, j
+      real(KIND=8) :: x1, x2, y1, y2, f11, f12, f21, f22, t, u
+
+      ierr = 0
+      nrows = size(row_indices)
+      ncols = size(col_indices)
+
+      ! Check if row_val and col_val are within the bounds of the table
+      if (row_val < row_indices(1) .or. row_val > row_indices(nrows) .or. &
+         col_val < col_indices(1) .or. col_val > col_indices(ncols)) then
+         ierr = 1
+         print *, "Error: Target row or column value is out of bounds for interpolation."
+         interp_val = 0.0
+         return
+      end if
+
+      ! Find the interval for row_val
+      do i = 1, nrows - 1
+         if (row_val >= row_indices(i) .and. row_val <= row_indices(i+1)) exit
+      end do
+
+      ! Find the interval for col_val
+      do j = 1, ncols - 1
+         if (col_val >= col_indices(j) .and. col_val <= col_indices(j+1)) exit
+      end do
+
+      ! Set the four surrounding points
+      x1 = row_indices(i)
+      x2 = row_indices(i+1)
+      y1 = col_indices(j)
+      y2 = col_indices(j+1)
+
+      f11 = table_data(i, j)
+      f12 = table_data(i, j+1)
+      f21 = table_data(i+1, j)
+      f22 = table_data(i+1, j+1)
+
+      ! Calculate the interpolation weights
+      t = (row_val - x1) / (x2 - x1)
+      u = (col_val - y1) / (y2 - y1)
+
+      ! Perform bilinear interpolation
+      interp_val = (1 - t) * (1 - u) * f11 + t * (1 - u) * f21 + &
+                  (1 - t) * u * f12 + t * u * f22
+
+   end function interpolate_2d_table
+
+
+   subroutine read_2d_table(filename, nrows, ncols, row_indices, col_indices, table_data)
+      implicit none
+
+      character(len=*), intent(in) :: filename
+      integer, intent(out) :: nrows, ncols
+      real(KIND=8), allocatable, intent(out) :: row_indices(:), col_indices(:), table_data(:,:)
+
+      integer :: i, j, io_status, ierr
+
+      ! Initialize error flag
+      ierr = 0
+
+      ! Open the file
+      open(unit=10, file=filename, status='old', iostat=io_status)
+      if (io_status /= 0) then
+         ierr = 1
+         print *, "Error: Could not open file ", filename
+         return
+      end if
+
+      ! Read number of rows and columns
+      read(10, *, iostat=io_status) nrows
+      read(10, *, iostat=io_status) ncols
+      if (io_status /= 0) then
+         ierr = 2
+         print *, "Error: Could not read nrows and ncols"
+         close(10)
+         return
+      end if
+
+      ! Allocate arrays for row and column indices
+      allocate(row_indices(nrows), stat=io_status)
+      if (io_status /= 0) then
+         ierr = 3
+         print *, "Error: Could not allocate row_indices"
+         close(10)
+         return
+      end if
+
+      allocate(col_indices(ncols), stat=io_status)
+      if (io_status /= 0) then
+         ierr = 4
+         print *, "Error: Could not allocate col_indices"
+         deallocate(row_indices)
+         close(10)
+         return
+      end if
+
+      ! Allocate array for table data
+      allocate(table_data(nrows, ncols), stat=io_status)
+      if (io_status /= 0) then
+         ierr = 5
+         print *, "Error: Could not allocate table_data"
+         deallocate(row_indices, col_indices)
+         close(10)
+         return
+      end if
+
+      ! Read row indices
+      read(10, *, iostat=io_status) (row_indices(i), i=1, nrows)
+      if (io_status /= 0) then
+         ierr = 6
+         print *, "Error: Could not read row indices"
+         deallocate(row_indices, col_indices, table_data)
+         close(10)
+         return
+      end if
+
+      ! Read column indices
+      read(10, *, iostat=io_status) (col_indices(j), j=1, ncols)
+      if (io_status /= 0) then
+         ierr = 7
+         print *, "Error: Could not read column indices"
+         deallocate(row_indices, col_indices, table_data)
+         close(10)
+         return
+      end if
+
+      ! Read table data in 1.8e format
+      do i = 1, nrows
+         read(10, *, iostat=io_status) (table_data(i, j), j=1, ncols)
+         if (io_status /= 0) then
+               ierr = 8
+               print *, "Error: Could not read table data for row ", i
+               deallocate(row_indices, col_indices, table_data)
+               close(10)
+               return
+         end if
+      end do
+
+      ! Close the file
+      close(10)
+
+   end subroutine read_2d_table
 
 
 end module 
