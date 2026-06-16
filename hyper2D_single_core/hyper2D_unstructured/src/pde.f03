@@ -48,60 +48,105 @@ module pde
 
    ! ============================================================
 
-   subroutine compute_wall_state(U, U_sym, SP_ID)
+   subroutine compute_noslip_state(U, Twall, U_wall)
 
       implicit none
 
-      real(kind=8), dimension(Neq), intent(in)  :: U
-      real(kind=8), dimension(Neq), intent(out) :: U_sym
-      INTEGER,                      intent(in)  :: SP_ID
+      real(kind=8), dimension(:), intent(in)  :: U
+      real(kind=8), dimension(:), intent(out) :: U_wall
+      real(kind=8), intent(in)  :: Twall
 
       real(kind=8), dimension(Neq) :: prim
+      INTEGER :: I, FIRST, LAST
 
-      call compute_primitive_from_conserved(U, prim, SP_ID)
+      DO I = 1, N_SPECIES_FLUID
+         FIRST = (I-1)*Neq+1
+         LAST = I*Neq
 
-      ! Compose new state
-      prim(2) = 0.d0
-      prim(3) = 0.d0
+         call compute_primitive_from_conserved(U(FIRST:LAST), prim, I)
 
-      call compute_conserved_from_primitive(prim, U_sym, SP_ID)
+         ! Compose new state
+         ! Densities are unchanged
+         prim(2) = 0.d0
+         prim(3) = 0.d0
+         prim(4) = Twall
+
+         call compute_conserved_from_primitive(prim, U_wall(FIRST:LAST), I)
+
+      END DO
 
    end subroutine 
 
    ! ============================================================
 
-   subroutine compute_sym_state(U, nx, ny, U_sym, SP_ID)
+   subroutine compute_sym_state(U, nx, ny, U_sym)
 
       implicit none
 
-      real(kind=8), dimension(Neq), intent(in)  :: U
-      real(kind=8), dimension(Neq), intent(out) :: U_sym
+      real(kind=8), dimension(:), intent(in)  :: U
+      real(kind=8), dimension(:), intent(out) :: U_sym
       real(kind=8), intent(in) :: nx, ny
-      INTEGER,                      intent(in)  :: SP_ID
 
       real(kind=8), dimension(Neq) :: prim
 
       real(kind=8) :: ux, uy, u_norm
 
-      call compute_primitive_from_conserved(U, prim, SP_ID)
+      INTEGER :: I, FIRST, LAST
+
+      DO I = 1, N_SPECIES_FLUID
+         FIRST = (I-1)*Neq+1
+         LAST = I*Neq
+
+         call compute_primitive_from_conserved(U(FIRST:LAST), prim, I)
+
+         ux = prim(2)
+         uy = prim(3)
+
+         ! Mirror the normal velocity component
+         ! (this is equivalent to removing the normal component two times)
+         u_norm = ux*nx + uy*ny
+         ux = ux - 2.0*u_norm*nx
+         uy = uy - 2.0*u_norm*ny
+
+         ! Compose new state
+         prim(2) = ux
+         prim(3) = uy
+
+         call compute_conserved_from_primitive(prim, U_sym(FIRST:LAST), I)
+
+      END DO
+
+   end subroutine 
 
 
-      ux = prim(2)
-      uy = prim(3)
+   ! ============================================================
 
-      ! Mirror the normal velocity component (this is equivalent to removing the 
-      ! normal component two times!
-      !! ERROR !! ux = ux - 2.0*ux*nx
-      !! ERROR !! uy = uy - 2.0*uy*ny
-      u_norm = ux*nx + uy*ny
-      ux = ux - 2.0*u_norm*nx
-      uy = uy - 2.0*u_norm*ny
+   subroutine compute_moving_state(U, nx, ny, Twall, ux_wall, uy_wall, U_sym)
 
-      ! Compose new state
-      prim(2) = ux
-      prim(3) = uy
+      implicit none
 
-      call compute_conserved_from_primitive(prim, U_sym, SP_ID)
+      real(kind=8), dimension(:), intent(in)  :: U
+      real(kind=8), dimension(:), intent(out) :: U_sym
+      real(kind=8), intent(in) :: nx, ny, Twall, ux_wall, uy_wall
+
+      real(kind=8), dimension(Neq) :: prim
+
+      INTEGER :: I, FIRST, LAST
+
+      DO I = 1, N_SPECIES_FLUID
+         FIRST = (I-1)*Neq+1
+         LAST = I*Neq
+
+         call compute_primitive_from_conserved(U(FIRST:LAST), prim, I)
+
+         ! Compose new state
+         prim(2) = ux_wall
+         prim(3) = uy_wall
+         prim(4) = Twall
+
+         call compute_conserved_from_primitive(prim, U_sym(FIRST:LAST), I)
+
+      END DO
 
    end subroutine 
 
@@ -216,5 +261,251 @@ module pde
       ws_min   = u_dot_n - sqrt(SPECIES(SP_ID)%GAMMA*P/rho)
 
    end subroutine
+
+
+
+   subroutine compute_cell_centered_gradients_green_gauss(U, gradU)
+
+      ! This subroutine computes cell-centered gradients using the Green-Gauss
+      ! method. This method is very simple, but is inaccurate for skewed cells
+      ! or neighboring cells of different size.
+
+      implicit none
+   
+      real(kind=8), dimension(:,:), intent(in)  :: U
+      real(kind=8), dimension(:,:,:), intent(inout)  :: gradU
+
+      INTEGER :: I, J, neigh, FACE_PG, SP_ID, FIRST, LAST, NEIGHBORPG
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: Uface
+      REAL(KIND=8) :: nx, ny, Aface, Vcell
+      REAL(KIND=8), DIMENSION(:), allocatable :: U_adj
+
+      LOGICAL :: ONAXIS, FLUIDBOUNDARY
+
+
+      ! Compute gradient in each cell from nodal values
+      gradU = 0.d0
+      ALLOCATE(Uface(N_SPECIES_FLUID*Neq))
+      ALLOCATE(U_adj(N_SPECIES_FLUID*Neq))
+
+      DO I = 1, NCELLS
+         ! Skip cells that are not fluid
+         IF (U2D_GRID%CELL_PG(I) .NE. -1) THEN
+            IF (GRID_BC(U2D_GRID%CELL_PG(I))%VOLUME_BC == SOLID) CYCLE
+         END IF
+
+         ONAXIS = .FALSE.
+         DO J = 1, 3 ! The cell face
+            ! Extract data
+            Aface = U2D_GRID%CELL_FACES_AREA(J,I)
+            nx = U2D_GRID%EDGE_NORMAL(1,J,I)
+            ny = U2D_GRID%EDGE_NORMAL(2,J,I)
+            Vcell = U2D_GRID%CELL_VOLUMES(I)
+
+            FLUIDBOUNDARY = .FALSE.
+            neigh = U2D_GRID%CELL_NEIGHBORS(J,I)
+            IF (neigh == -1) THEN
+               FLUIDBOUNDARY = .TRUE.
+            ELSE
+               NEIGHBORPG = U2D_GRID%CELL_PG(neigh)
+               IF (NEIGHBORPG .NE. -1) THEN
+                  IF (GRID_BC(NEIGHBORPG)%VOLUME_BC == SOLID) FLUIDBOUNDARY = .TRUE.
+               END IF
+            END IF
+
+            IF (.NOT. FLUIDBOUNDARY) THEN
+               Uface = 0.5*(U(:,I) + U(:,neigh))
+            else
+               FACE_PG = U2D_GRID%CELL_EDGES_PG(J,I)
+               if (GRID_BC(FACE_PG)%PARTICLE_BC == STATE) then ! ++++++++ STATE BOUNDARY +++++++++++++++++++
+                  DO SP_ID = 1, N_SPECIES_FLUID
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq
+                     CALL compute_primitive_from_conserved(GRID_BC(FACE_PG)%U_BOUND(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
+                  END DO
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == NOSLIP) then ! ++++++++ WALL NO-SLIP BOUNDARY ++++++++++++++++++++
+                  U_adj = U(:,I)
+                  DO SP_ID = 1, N_SPECIES_FLUID
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq
+                     U_adj(FIRST+1) = 0.d0
+                     U_adj(FIRST+2) = 0.d0
+                     U_adj(FIRST+3) = GRID_BC(FACE_PG)%TEMP
+                  END DO
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == MOVING) then ! ++++++++ MOVING BOUNDARY ++++++++++++++++++++
+                  U_adj = U(:,I)
+                  DO SP_ID = 1, N_SPECIES_FLUID
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq
+                     U_adj(FIRST+1) = GRID_BC(FACE_PG)%UX
+                     U_adj(FIRST+2) = GRID_BC(FACE_PG)%UY
+                     U_adj(FIRST+3) = GRID_BC(FACE_PG)%TEMP
+                  END DO
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
+                  ONAXIS = .TRUE.
+                  U_adj = U(:,I)
+                  DO SP_ID = 1, N_SPECIES_FLUID
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq
+                     U_adj(FIRST+1) = U(FIRST+1,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*nx
+                     U_adj(FIRST+2) = U(FIRST+2,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*ny
+                  END DO
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) then ! ++++++++ KINETIC BOUNDARY ++++++++++++++++++++
+                  U_adj = U(:,I)
+               else
+                  print*, "ERROR! UNKNOWN BOUNDARY TYPE ", neigh, " for element ", I, &
+                  " Check the mesh or the pre-processing."
+                  print*, "ABORTING!"
+                  STOP
+               end if
+
+               Uface = 0.5*(U(:,I) + U_adj)
+
+            end if
+
+            gradU(1,:,I) = gradU(1,:,I) + Uface*nx*Aface/Vcell
+            gradU(2,:,I) = gradU(2,:,I) + Uface*ny*Aface/Vcell
+
+         END DO
+
+         !IF (ONAXIS) gradU(2,:,I) = 0.d0
+
+      END DO
+
+      DEALLOCATE(Uface)
+      DEALLOCATE(U_adj)
+
+   end subroutine
+
+
+   subroutine compute_cell_centered_gradients_weighted_least_squares(U, gradU)
+
+      ! This subroutine computes cell-centered gradients of the primitive variables using the 
+      ! weighted-least-squares method of White [https://doi.org/10.2514/6.2019-0127]
+      ! Coefficients for the least-squares solution are precomputed and stored in the
+      ! matrix LSTSQ_COEFFS after the mesh is read.
+
+      implicit none
+   
+      real(kind=8), dimension(:,:), intent(in)  :: U
+      real(kind=8), dimension(:,:,:), intent(inout)  :: gradU
+
+      INTEGER :: I, J, neigh, FACE_PG, SP_ID, FIRST, LAST, NEIGHBORPG
+      REAL(KIND=8) :: nx, ny, Aface, Vcell
+      REAL(KIND=8), DIMENSION(:), allocatable :: U_adj
+      REAL(KIND=8) :: DX, DY, WJ
+
+      LOGICAL :: ONAXIS, FLUIDBOUNDARY
+
+
+      INTEGER :: VERT
+      REAL(KIND=8) :: XVERT, YVERT, DIST, XC, YC
+
+      ! Compute gradient in each cell from nodal values
+      gradU = 0.d0
+      ALLOCATE(U_adj(N_SPECIES_FLUID*Neq))
+
+      DO I = 1, NCELLS
+         ! Skip cells that are not fluid
+         IF (U2D_GRID%CELL_PG(I) .NE. -1) THEN
+            IF (GRID_BC(U2D_GRID%CELL_PG(I))%VOLUME_BC == SOLID) CYCLE
+         END IF
+         
+         ONAXIS = .FALSE.
+         DO J = 1, 3 ! The cell face
+            ! Extract data
+            Aface = U2D_GRID%CELL_FACES_AREA(J,I)
+            nx = U2D_GRID%EDGE_NORMAL(1,J,I)
+            ny = U2D_GRID%EDGE_NORMAL(2,J,I)
+            Vcell = U2D_GRID%CELL_VOLUMES(I)
+
+            FLUIDBOUNDARY = .FALSE.
+            neigh = U2D_GRID%CELL_NEIGHBORS(J,I)
+            IF (neigh == -1) THEN
+               FLUIDBOUNDARY = .TRUE.
+            ELSE
+               NEIGHBORPG = U2D_GRID%CELL_PG(neigh)
+               IF (NEIGHBORPG .NE. -1) THEN
+                  IF (GRID_BC(NEIGHBORPG)%VOLUME_BC == SOLID) FLUIDBOUNDARY = .TRUE.
+               END IF
+            END IF
+
+            IF (.NOT. FLUIDBOUNDARY) THEN
+               U_adj = U(:,neigh)
+            else
+               FACE_PG = U2D_GRID%CELL_EDGES_PG(J,I)
+               if (GRID_BC(FACE_PG)%PARTICLE_BC == STATE) then ! ++++++++ STATE BOUNDARY +++++++++++++++++++
+                  DO SP_ID = 1, N_SPECIES_FLUID
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq
+                     CALL compute_primitive_from_conserved(GRID_BC(FACE_PG)%U_BOUND(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
+                  END DO
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == NOSLIP) then ! ++++++++ WALL NO-SLIP BOUNDARY ++++++++++++++++++++
+                  U_adj = U(:,I)
+                  DO SP_ID = 1, N_SPECIES_FLUID
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq
+                     U_adj(FIRST+1) = 0.d0
+                     U_adj(FIRST+2) = 0.d0
+                     U_adj(FIRST+3) = GRID_BC(FACE_PG)%TEMP
+                  END DO
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == MOVING) then ! ++++++++ MOVING BOUNDARY ++++++++++++++++++++
+                  U_adj = U(:,I)
+                  DO SP_ID = 1, N_SPECIES_FLUID
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq
+                     U_adj(FIRST+1) = GRID_BC(FACE_PG)%UX
+                     U_adj(FIRST+2) = GRID_BC(FACE_PG)%UY
+                     U_adj(FIRST+3) = GRID_BC(FACE_PG)%TEMP
+                  END DO
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
+                  ONAXIS = .TRUE.
+                  U_adj = U(:,I)
+                  DO SP_ID = 1, N_SPECIES_FLUID
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq
+                     U_adj(FIRST+1) = U(FIRST+1,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*nx
+                     U_adj(FIRST+2) = U(FIRST+2,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*ny
+                  END DO
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) then ! ++++++++ KINETIC BOUNDARY ++++++++++++++++++++
+                  U_adj = U(:,I)
+               else
+                  print*, "ERROR! UNKNOWN BOUNDARY TYPE ", neigh, " for element ", I, &
+                  " Check the mesh or the pre-processing."
+                  print*, "ABORTING!"
+                  STOP
+               end if
+            end if
+
+
+            IF (FLUIDBOUNDARY) THEN
+               XC = U2D_GRID%CELL_CENTROIDS(1, I)
+               YC = U2D_GRID%CELL_CENTROIDS(2, I)
+
+               VERT = U2D_GRID%CELL_NODES(J,I)
+               XVERT = U2D_GRID%NODE_COORDS(1, VERT)
+               YVERT = U2D_GRID%NODE_COORDS(2, VERT)
+
+               DIST = -2.*((XC-XVERT)*nx + (YC-YVERT)*ny)
+               WJ = 1./DIST
+            ELSE
+               DX = U2D_GRID%CELL_CENTROIDS(1, neigh) - U2D_GRID%CELL_CENTROIDS(1, I)
+               DY = U2D_GRID%CELL_CENTROIDS(2, neigh) - U2D_GRID%CELL_CENTROIDS(2, I)
+               WJ = 1./SQRT(DX*DX + DY*DY)
+            END IF
+
+            gradU(1,:,I) = gradU(1,:,I) + WJ*(U_adj - U(:,I))*U2D_GRID%LSTSQ_COEFFS(1,J,I)
+            gradU(2,:,I) = gradU(2,:,I) + WJ*(U_adj - U(:,I))*U2D_GRID%LSTSQ_COEFFS(2,J,I)
+
+         END DO
+
+         !IF (ONAXIS) gradU(2,:,I) = 0.d0
+
+      END DO
+
+      DEALLOCATE(U_adj)
+
+   end subroutine
+
 
 end module

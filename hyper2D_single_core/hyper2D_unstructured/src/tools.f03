@@ -27,16 +27,18 @@ module tools
       real(kind=8), intent(in) :: TIME
       real(kind=8), dimension(:,:), intent(in) :: U
 
-      real(kind=8), dimension(:,:), allocatable :: prim ! Primitive variables
+      real(kind=8), dimension(:,:), allocatable :: prim, Uprim ! Primitive variables
+      real(kind=8), dimension(:,:,:), allocatable :: gradUprim
    
       integer      :: eqID
       CHARACTER*256                      :: file_name
-      INTEGER                            :: I, J, IC
+      INTEGER                            :: I, J, IC, FIRST, LAST
 
-      character(len=20), dimension(:), allocatable :: prim_names, transport_names
+      character(len=20), dimension(:), allocatable :: prim_names, transport_names, grad_names
 
       ALLOCATE(prim_names(N_SPECIES_FLUID*5))
       ALLOCATE(transport_names(N_SPECIES_FLUID*3))
+      ALLOCATE(grad_names(N_SPECIES_FLUID*4))
 
 
       DO I = 1, N_SPECIES_FLUID
@@ -49,6 +51,14 @@ module tools
       END DO
 
       DO I = 1, N_SPECIES_FLUID
+         J = 4*(I-1)
+         grad_names(J+1) = 'grad_rho_'//TRIM(SPECIES(I)%NAME)
+         grad_names(J+2) = 'grad_vx_'//TRIM(SPECIES(I)%NAME)
+         grad_names(J+3) = 'grad_vy_'//TRIM(SPECIES(I)%NAME)
+         grad_names(J+4) = 'grad_T_'//TRIM(SPECIES(I)%NAME)
+      END DO
+
+      DO I = 1, N_SPECIES_FLUID
          J = 3*(I-1)
          transport_names(J+1) = 'mu_'//TRIM(SPECIES(I)%NAME)
          transport_names(J+2) = 'kappa_'//TRIM(SPECIES(I)%NAME)//'I'
@@ -58,6 +68,8 @@ module tools
       ! ----- Compute primitive variables on the grid ------
 
       allocate(prim(N_SPECIES_FLUID*5,NCELLS))
+      allocate(Uprim(N_SPECIES_FLUID*4,NCELLS))
+      allocate(gradUprim(2,N_SPECIES_FLUID*4,NCELLS))
 
       prim = 0.0 ! Init
       do IC = 1, NCELLS
@@ -71,6 +83,22 @@ module tools
             prim((I-1)*5+1,IC) = prim((I-1)*5+2,IC) / SPECIES(I)%MOLECULAR_MASS
          END DO
       end do
+
+      DO IC = 1, NCELLS
+         ! Skip cells that are not fluid
+         IF (U2D_GRID%CELL_PG(IC) .NE. -1) THEN
+            IF (GRID_BC(U2D_GRID%CELL_PG(IC))%VOLUME_BC == SOLID) CYCLE
+         END IF
+
+         DO I = 1, N_SPECIES_FLUID
+            FIRST = (I-1)*Neq+1
+            LAST = I*Neq
+            call compute_primitive_from_conserved(U(FIRST:LAST,IC), Uprim(FIRST:LAST,IC), I)
+         END DO
+      END DO
+
+      CALL compute_cell_centered_gradients_weighted_least_squares(Uprim, gradUprim)
+      !CALL compute_cell_centered_gradients_green_gauss(Uprim, gradUprim)
 
       ! ------- Write VTK file -------
 
@@ -109,7 +137,7 @@ module tools
 
          WRITE(54321) 'CELL_DATA '//ITOA(NCELLS)//ACHAR(10)
 
-         WRITE(54321) 'FIELD FieldData '//ITOA( N_SPECIES_FLUID*8 )//ACHAR(10)
+         WRITE(54321) 'FIELD FieldData '//ITOA( N_SPECIES_FLUID*(5+2*4) + 6 )//ACHAR(10)
 
 
          ! Write per-cell value
@@ -117,6 +145,17 @@ module tools
 
             WRITE(54321) prim_names(eqID)//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
             WRITE(54321) prim(eqID,:), ACHAR(10)
+
+         END DO
+
+         ! Write per-cell value
+         DO eqID = 1, N_SPECIES_FLUID*4
+
+            WRITE(54321) TRIM(grad_names(eqID))//'_x '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+            WRITE(54321) gradUprim(1,eqID,:), ACHAR(10)
+            
+            WRITE(54321) TRIM(grad_names(eqID))//'_y '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+            WRITE(54321) gradUprim(2,eqID,:), ACHAR(10)
 
          END DO
 
@@ -188,6 +227,11 @@ module tools
       END IF
 
       DEALLOCATE(prim_names)
+      DEALLOCATE(grad_names)
+      DEALLOCATE(prim)
+      DEALLOCATE(Uprim)
+      DEALLOCATE(gradUprim)
+
 
    END SUBROUTINE GRID_SAVE
 
@@ -513,7 +557,7 @@ module tools
       REAL(KIND=8) :: MU
 
       IF (.NOT. TABLE_MU_I%INITIALIZED) THEN
-         CALL read_2d_table('mu_I.txt', TABLE_MU_I%NROWS, TABLE_MU_I%NCOLS, &
+         CALL read_2d_table('mu_I_hs.txt', TABLE_MU_I%NROWS, TABLE_MU_I%NCOLS, &
          TABLE_MU_I%ROW_IDX, TABLE_MU_I%COL_IDX, TABLE_MU_I%DATA)
          TABLE_MU_I%INITIALIZED = .TRUE.
       END IF
@@ -530,7 +574,7 @@ module tools
       REAL(KIND=8) :: MU
 
       IF (.NOT. TABLE_MU_I2%INITIALIZED) THEN
-         CALL read_2d_table('mu_I2.txt', TABLE_MU_I2%NROWS, TABLE_MU_I2%NCOLS, &
+         CALL read_2d_table('mu_I2_hs.txt', TABLE_MU_I2%NROWS, TABLE_MU_I2%NCOLS, &
          TABLE_MU_I2%ROW_IDX, TABLE_MU_I2%COL_IDX, TABLE_MU_I2%DATA)
          TABLE_MU_I2%INITIALIZED = .TRUE.
       END IF
@@ -547,7 +591,7 @@ module tools
       REAL(KIND=8) :: KAPPA
 
       IF (.NOT. TABLE_KAPPA_I_I%INITIALIZED) THEN
-         CALL read_2d_table('kappa_I_I.txt', TABLE_KAPPA_I_I%NROWS, TABLE_KAPPA_I_I%NCOLS, &
+         CALL read_2d_table('kappa_I_I_hs.txt', TABLE_KAPPA_I_I%NROWS, TABLE_KAPPA_I_I%NCOLS, &
          TABLE_KAPPA_I_I%ROW_IDX, TABLE_KAPPA_I_I%COL_IDX, TABLE_KAPPA_I_I%DATA)
          TABLE_KAPPA_I_I%INITIALIZED = .TRUE.
       END IF
@@ -564,7 +608,7 @@ module tools
       REAL(KIND=8) :: KAPPA
 
       IF (.NOT. TABLE_KAPPA_I_I2%INITIALIZED) THEN
-         CALL read_2d_table('kappa_I_I2.txt', TABLE_KAPPA_I_I2%NROWS, TABLE_KAPPA_I_I2%NCOLS, &
+         CALL read_2d_table('kappa_I_I2_hs.txt', TABLE_KAPPA_I_I2%NROWS, TABLE_KAPPA_I_I2%NCOLS, &
          TABLE_KAPPA_I_I2%ROW_IDX, TABLE_KAPPA_I_I2%COL_IDX, TABLE_KAPPA_I_I2%DATA)
          TABLE_KAPPA_I_I2%INITIALIZED = .TRUE.
       END IF
@@ -581,7 +625,7 @@ module tools
       REAL(KIND=8) :: KAPPA
 
       IF (.NOT. TABLE_KAPPA_I2_I%INITIALIZED) THEN
-         CALL read_2d_table('kappa_I2_I.txt', TABLE_KAPPA_I2_I%NROWS, TABLE_KAPPA_I2_I%NCOLS, &
+         CALL read_2d_table('kappa_I2_I_hs.txt', TABLE_KAPPA_I2_I%NROWS, TABLE_KAPPA_I2_I%NCOLS, &
          TABLE_KAPPA_I2_I%ROW_IDX, TABLE_KAPPA_I2_I%COL_IDX, TABLE_KAPPA_I2_I%DATA)
          TABLE_KAPPA_I2_I%INITIALIZED = .TRUE.
       END IF
@@ -598,7 +642,7 @@ module tools
       REAL(KIND=8) :: KAPPA
 
       IF (.NOT. TABLE_KAPPA_I2_I2%INITIALIZED) THEN
-         CALL read_2d_table('kappa_I2_I2.txt', TABLE_KAPPA_I2_I2%NROWS, TABLE_KAPPA_I2_I2%NCOLS, &
+         CALL read_2d_table('kappa_I2_I2_hs.txt', TABLE_KAPPA_I2_I2%NROWS, TABLE_KAPPA_I2_I2%NCOLS, &
          TABLE_KAPPA_I2_I2%ROW_IDX, TABLE_KAPPA_I2_I2%COL_IDX, TABLE_KAPPA_I2_I2%DATA)
          TABLE_KAPPA_I2_I2%INITIALIZED = .TRUE.
       END IF

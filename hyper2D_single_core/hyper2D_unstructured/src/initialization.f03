@@ -148,6 +148,8 @@ MODULE initialization
                FLUX_FUNCTION = HLL
             ELSE IF (FLUX_FUNCTION_STRING == "SLAU") THEN
                FLUX_FUNCTION = SLAU
+            ELSE IF (FLUX_FUNCTION_STRING == "CENTRAL") THEN
+               FLUX_FUNCTION = CENTRAL
             ELSE
                CALL ERROR_ABORT('Specified flux function in input file does not exist.')
             END IF
@@ -497,6 +499,7 @@ MODULE initialization
       END IF
 
       IF (STRARRAY(2) == 'state') THEN
+         ! Fixes the state in the ghost cell
          GRID_BC(IPG)%PARTICLE_BC = STATE
          READ(STRARRAY(3),'(A10)') MIX_NAME
          GRID_BC(IPG)%MIX_ID = MIXTURE_NAME_TO_ID(MIX_NAME)
@@ -511,21 +514,40 @@ MODULE initialization
          DO I = 1, MIXTURES(GRID_BC(IPG)%MIX_ID)%N_COMPONENTS
             SP_ID = MIXTURES(GRID_BC(IPG)%MIX_ID)%COMPONENTS(I)%ID
             FIRST = (SP_ID-1)*Neq+1
-            LAST = SP_ID*Neq+1
+            LAST = SP_ID*Neq
 
             FRAC = MIXTURES(GRID_BC(IPG)%MIX_ID)%COMPONENTS(I)%MOLFRAC
             U_BOUND_PRIM(1) = FRAC*GRID_BC(IPG)%NRHO*SPECIES(SP_ID)%MOLECULAR_MASS
             U_BOUND_PRIM(2) = U_BOUND_PRIM(1)*GRID_BC(IPG)%UX
             U_BOUND_PRIM(3) = U_BOUND_PRIM(1)*GRID_BC(IPG)%UY
             U_BOUND_PRIM(4) = GRID_BC(IPG)%TEMP
-            CALL compute_primitive_from_conserved(U_BOUND_PRIM, GRID_BC(IPG)%U_BOUND(FIRST:LAST), SP_ID)
+            CALL compute_conserved_from_primitive(U_BOUND_PRIM, GRID_BC(IPG)%U_BOUND(FIRST:LAST), SP_ID)
          END DO
-      ELSE IF (STRARRAY(2) == 'wall') THEN
-         GRID_BC(IPG)%PARTICLE_BC = WALL
+      ELSE IF (STRARRAY(2) == 'noslip') THEN
+         ! Wall considered as no-slip, non permeable
+         ! If react is active, makes the species react as specified, and the kinetic fluxes are used
+         GRID_BC(IPG)%PARTICLE_BC = NOSLIP
+         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%TEMP
       ELSE IF (STRARRAY(2) == 'symmetry') THEN
+         ! A symmetrical wall, meaning the state in the ghost cell is identical, except the normal velocity is flipped along the normal direction
          GRID_BC(IPG)%PARTICLE_BC = SYMMETRY
       ELSE IF (STRARRAY(2) == 'react') THEN
+         ! Activates wall reactions, specified in a separate file
          GRID_BC(IPG)%REACT = .TRUE.
+      ELSE IF (STRARRAY(2) == 'moving') THEN
+         ! Wall considered as no-slip, non permeable, with a velocity
+         GRID_BC(IPG)%PARTICLE_BC = MOVING
+         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%TEMP
+         READ(STRARRAY(4), '(ES14.0)') GRID_BC(IPG)%UX
+         READ(STRARRAY(5), '(ES14.0)') GRID_BC(IPG)%UY
+      ELSE IF (STRARRAY(2) == 'kinetic') THEN
+         ! Fluxes computed at the wall are based on kinetic theory
+         ! assuming a Maxwell-Boltzmann distibution in the boundary cell,
+         ! and fully-accommodated diffuse reflections.
+         GRID_BC(IPG)%PARTICLE_BC = KINETIC
+         READ(STRARRAY(3), '(ES14.0)') GRID_BC(IPG)%TEMP
+         READ(STRARRAY(4), '(ES14.0)') GRID_BC(IPG)%UX
+         READ(STRARRAY(5), '(ES14.0)') GRID_BC(IPG)%UY
       ELSE
          CALL ERROR_ABORT('Error in boundary condition definition.')
       END IF
