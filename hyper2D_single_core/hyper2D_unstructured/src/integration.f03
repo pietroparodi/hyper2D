@@ -123,7 +123,9 @@ module integration
                   GRID_BC(FACE_PG)%UX, GRID_BC(FACE_PG)%UY, Uneigh)
                   gradUprim_neigh = gradUprim(:,:,eleID)
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) then ! ++++++++ MOVING BOUNDARY ++++++++++++++++++++
-                  Uneigh = U(:,eleID)
+                  call compute_moving_state(U(:,eleID), nx, ny, GRID_BC(FACE_PG)%TEMP, &
+                  GRID_BC(FACE_PG)%UX, GRID_BC(FACE_PG)%UY, Uneigh)
+                  !Uneigh = U(:,eleID)
                   gradUprim_neigh = gradUprim(:,:,eleID)
                else
                   print*, "ERROR! UNKNOWN BOUNDARY TYPE ", neigh, " for element ", eleID, &
@@ -168,7 +170,7 @@ module integration
                FACE_PG = U2D_GRID%CELL_EDGES_PG(intID,eleID)
 
                F_dot_n_hyper = 0.d0
-               F_dot_n_diff = 0.d0
+               !F_dot_n_diff = 0.d0
 
                CALL compute_kinetic_wall_fluxes(U(:,eleID), nx, ny, GRID_BC(FACE_PG)%TEMP, &
                GRID_BC(FACE_PG)%UX, GRID_BC(FACE_PG)%UY, GRID_BC(FACE_PG)%REACT, F_dot_n_wall)
@@ -1269,7 +1271,8 @@ module integration
          ELSE
             MU_R = MU_GRID(I, neigh)
          END IF
-         MU = 2.*MU_L*MU_R/(MU_L+MU_R)
+         !MU = 2.*MU_L*MU_R/(MU_L+MU_R)
+         MU = 0.5*(MU_L + MU_R)
 
 
          !MU_LIM = CFL_target*(A_ele*rho_L)/(6.*dt_target)
@@ -1324,7 +1327,7 @@ module integration
             ELSE
                KAPPA_R = KAPPA_GRID(I,J, neigh)
             END IF
-            KAPPA = 2.*KAPPA_L*KAPPA_R/(KAPPA_L+KAPPA_R)
+            KAPPA = 0.5*(KAPPA_L + KAPPA_R)
             CP    = SPECIES(I)%CP
 
             rho_L = U_L(FIRST)

@@ -557,7 +557,7 @@ module tools
       REAL(KIND=8) :: MU
 
       IF (.NOT. TABLE_MU_I%INITIALIZED) THEN
-         CALL read_2d_table('mu_I_hs.txt', TABLE_MU_I%NROWS, TABLE_MU_I%NCOLS, &
+         CALL read_2d_table('mu_I_vss.txt', TABLE_MU_I%NROWS, TABLE_MU_I%NCOLS, &
          TABLE_MU_I%ROW_IDX, TABLE_MU_I%COL_IDX, TABLE_MU_I%DATA)
          TABLE_MU_I%INITIALIZED = .TRUE.
       END IF
@@ -574,7 +574,7 @@ module tools
       REAL(KIND=8) :: MU
 
       IF (.NOT. TABLE_MU_I2%INITIALIZED) THEN
-         CALL read_2d_table('mu_I2_hs.txt', TABLE_MU_I2%NROWS, TABLE_MU_I2%NCOLS, &
+         CALL read_2d_table('mu_I2_vss.txt', TABLE_MU_I2%NROWS, TABLE_MU_I2%NCOLS, &
          TABLE_MU_I2%ROW_IDX, TABLE_MU_I2%COL_IDX, TABLE_MU_I2%DATA)
          TABLE_MU_I2%INITIALIZED = .TRUE.
       END IF
@@ -591,7 +591,7 @@ module tools
       REAL(KIND=8) :: KAPPA
 
       IF (.NOT. TABLE_KAPPA_I_I%INITIALIZED) THEN
-         CALL read_2d_table('kappa_I_I_hs.txt', TABLE_KAPPA_I_I%NROWS, TABLE_KAPPA_I_I%NCOLS, &
+         CALL read_2d_table('kappa_I_I_vss.txt', TABLE_KAPPA_I_I%NROWS, TABLE_KAPPA_I_I%NCOLS, &
          TABLE_KAPPA_I_I%ROW_IDX, TABLE_KAPPA_I_I%COL_IDX, TABLE_KAPPA_I_I%DATA)
          TABLE_KAPPA_I_I%INITIALIZED = .TRUE.
       END IF
@@ -608,7 +608,7 @@ module tools
       REAL(KIND=8) :: KAPPA
 
       IF (.NOT. TABLE_KAPPA_I_I2%INITIALIZED) THEN
-         CALL read_2d_table('kappa_I_I2_hs.txt', TABLE_KAPPA_I_I2%NROWS, TABLE_KAPPA_I_I2%NCOLS, &
+         CALL read_2d_table('kappa_I_I2_vss.txt', TABLE_KAPPA_I_I2%NROWS, TABLE_KAPPA_I_I2%NCOLS, &
          TABLE_KAPPA_I_I2%ROW_IDX, TABLE_KAPPA_I_I2%COL_IDX, TABLE_KAPPA_I_I2%DATA)
          TABLE_KAPPA_I_I2%INITIALIZED = .TRUE.
       END IF
@@ -625,7 +625,7 @@ module tools
       REAL(KIND=8) :: KAPPA
 
       IF (.NOT. TABLE_KAPPA_I2_I%INITIALIZED) THEN
-         CALL read_2d_table('kappa_I2_I_hs.txt', TABLE_KAPPA_I2_I%NROWS, TABLE_KAPPA_I2_I%NCOLS, &
+         CALL read_2d_table('kappa_I2_I_vss.txt', TABLE_KAPPA_I2_I%NROWS, TABLE_KAPPA_I2_I%NCOLS, &
          TABLE_KAPPA_I2_I%ROW_IDX, TABLE_KAPPA_I2_I%COL_IDX, TABLE_KAPPA_I2_I%DATA)
          TABLE_KAPPA_I2_I%INITIALIZED = .TRUE.
       END IF
@@ -642,7 +642,7 @@ module tools
       REAL(KIND=8) :: KAPPA
 
       IF (.NOT. TABLE_KAPPA_I2_I2%INITIALIZED) THEN
-         CALL read_2d_table('kappa_I2_I2_hs.txt', TABLE_KAPPA_I2_I2%NROWS, TABLE_KAPPA_I2_I2%NCOLS, &
+         CALL read_2d_table('kappa_I2_I2_vss.txt', TABLE_KAPPA_I2_I2%NROWS, TABLE_KAPPA_I2_I2%NCOLS, &
          TABLE_KAPPA_I2_I2%ROW_IDX, TABLE_KAPPA_I2_I2%COL_IDX, TABLE_KAPPA_I2_I2%DATA)
          TABLE_KAPPA_I2_I2%INITIALIZED = .TRUE.
       END IF

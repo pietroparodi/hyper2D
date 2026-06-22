@@ -58,6 +58,7 @@ module pde
 
       real(kind=8), dimension(Neq) :: prim
       INTEGER :: I, FIRST, LAST
+      real(kind=8) :: ux, uy, T
 
       DO I = 1, N_SPECIES_FLUID
          FIRST = (I-1)*Neq+1
@@ -65,11 +66,14 @@ module pde
 
          call compute_primitive_from_conserved(U(FIRST:LAST), prim, I)
 
+         ux = prim(2)
+         uy = prim(3)
+         T = prim(4)
          ! Compose new state
          ! Densities are unchanged
-         prim(2) = 0.d0
-         prim(3) = 0.d0
-         prim(4) = Twall
+         prim(2) = -ux
+         prim(3) = -uy
+         prim(4) = 2*Twall - T
 
          call compute_conserved_from_primitive(prim, U_wall(FIRST:LAST), I)
 
@@ -133,16 +137,26 @@ module pde
 
       INTEGER :: I, FIRST, LAST
 
+      REAL(KIND=8) :: u_norm, ux_wall_par, uy_wall_par, ux, uy, T
+
+      u_norm = ux_wall*nx + uy_wall*ny
+      ux_wall_par = ux_wall - nx*u_norm
+      uy_wall_par = uy_wall - ny*u_norm
+
       DO I = 1, N_SPECIES_FLUID
          FIRST = (I-1)*Neq+1
          LAST = I*Neq
 
          call compute_primitive_from_conserved(U(FIRST:LAST), prim, I)
+         
+         ux = prim(2)
+         uy = prim(3)
+         T = prim(4)
 
          ! Compose new state
-         prim(2) = ux_wall
-         prim(3) = uy_wall
-         prim(4) = Twall
+         prim(2) = 2.*ux_wall_par - ux
+         prim(3) = 2.*uy_wall_par - uy
+         prim(4) = 2*Twall - T
 
          call compute_conserved_from_primitive(prim, U_sym(FIRST:LAST), I)
 
@@ -321,18 +335,36 @@ module pde
                   DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq
-                     CALL compute_primitive_from_conserved(GRID_BC(FACE_PG)%U_BOUND(FIRST:LAST), U_adj(FIRST:LAST), SP_ID)
+                     CALL compute_primitive_from_conserved(GRID_BC(FACE_PG)%U_BOUND(FIRST:LAST), Uface(FIRST:LAST), SP_ID)
                   END DO
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == NOSLIP) then ! ++++++++ WALL NO-SLIP BOUNDARY ++++++++++++++++++++
-                  U_adj = U(:,I)
+                  Uface = U(:,I)
                   DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq
-                     U_adj(FIRST+1) = 0.d0
-                     U_adj(FIRST+2) = 0.d0
-                     U_adj(FIRST+3) = GRID_BC(FACE_PG)%TEMP
+                     Uface(FIRST+1) = 0.d0
+                     Uface(FIRST+2) = 0.d0
+                     Uface(FIRST+3) = GRID_BC(FACE_PG)%TEMP
                   END DO
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == MOVING) then ! ++++++++ MOVING BOUNDARY ++++++++++++++++++++
+                  Uface = U(:,I)
+                  DO SP_ID = 1, N_SPECIES_FLUID
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq
+                     Uface(FIRST+1) = GRID_BC(FACE_PG)%UX
+                     Uface(FIRST+2) = GRID_BC(FACE_PG)%UY
+                     Uface(FIRST+3) = GRID_BC(FACE_PG)%TEMP
+                  END DO
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
+                  ONAXIS = .TRUE.
+                  Uface = U(:,I)
+                  DO SP_ID = 1, N_SPECIES_FLUID
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq
+                     Uface(FIRST+1) = U(FIRST+1,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*nx
+                     Uface(FIRST+2) = U(FIRST+2,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*ny
+                  END DO
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) then ! ++++++++ KINETIC BOUNDARY ++++++++++++++++++++
                   U_adj = U(:,I)
                   DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
@@ -341,25 +373,13 @@ module pde
                      U_adj(FIRST+2) = GRID_BC(FACE_PG)%UY
                      U_adj(FIRST+3) = GRID_BC(FACE_PG)%TEMP
                   END DO
-               else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
-                  ONAXIS = .TRUE.
-                  U_adj = U(:,I)
-                  DO SP_ID = 1, N_SPECIES_FLUID
-                     FIRST = (SP_ID-1)*Neq+1
-                     LAST = SP_ID*Neq
-                     U_adj(FIRST+1) = U(FIRST+1,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*nx
-                     U_adj(FIRST+2) = U(FIRST+2,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*ny
-                  END DO
-               else if (GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) then ! ++++++++ KINETIC BOUNDARY ++++++++++++++++++++
-                  U_adj = U(:,I)
+                  Uface = 0.5*(U(:,I) + U_adj)
                else
                   print*, "ERROR! UNKNOWN BOUNDARY TYPE ", neigh, " for element ", I, &
                   " Check the mesh or the pre-processing."
                   print*, "ABORTING!"
                   STOP
                end if
-
-               Uface = 0.5*(U(:,I) + U_adj)
 
             end if
 
@@ -445,9 +465,9 @@ module pde
                   DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq
-                     U_adj(FIRST+1) = 0.d0
-                     U_adj(FIRST+2) = 0.d0
-                     U_adj(FIRST+3) = GRID_BC(FACE_PG)%TEMP
+                     U_adj(FIRST+1) = -U(FIRST+1,I)
+                     U_adj(FIRST+2) = -U(FIRST+2,I)
+                     U_adj(FIRST+3) = 2.*GRID_BC(FACE_PG)%TEMP - U(FIRST+3,I)
                   END DO
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == MOVING) then ! ++++++++ MOVING BOUNDARY ++++++++++++++++++++
                   U_adj = U(:,I)
@@ -469,6 +489,13 @@ module pde
                   END DO
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) then ! ++++++++ KINETIC BOUNDARY ++++++++++++++++++++
                   U_adj = U(:,I)
+                  DO SP_ID = 1, N_SPECIES_FLUID
+                     FIRST = (SP_ID-1)*Neq+1
+                     LAST = SP_ID*Neq
+                     U_adj(FIRST+1) = GRID_BC(FACE_PG)%UX
+                     U_adj(FIRST+2) = GRID_BC(FACE_PG)%UY
+                     U_adj(FIRST+3) = GRID_BC(FACE_PG)%TEMP
+                  END DO
                else
                   print*, "ERROR! UNKNOWN BOUNDARY TYPE ", neigh, " for element ", I, &
                   " Check the mesh or the pre-processing."
