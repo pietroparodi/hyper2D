@@ -73,7 +73,7 @@ module pde
          ! Densities are unchanged
          prim(2) = -ux
          prim(3) = -uy
-         prim(4) = 2*Twall - T
+         prim(4) = Twall !2*Twall - T
 
          call compute_conserved_from_primitive(prim, U_wall(FIRST:LAST), I)
 
@@ -361,19 +361,18 @@ module pde
                   DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq
-                     Uface(FIRST+1) = U(FIRST+1,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*nx
-                     Uface(FIRST+2) = U(FIRST+2,I) - 2.0*(U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*ny
+                     Uface(FIRST+1) = U(FIRST+1,I) - (U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*nx
+                     Uface(FIRST+2) = U(FIRST+2,I) - (U(FIRST+1,I)*nx + U(FIRST+2,I)*ny)*ny
                   END DO
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) then ! ++++++++ KINETIC BOUNDARY ++++++++++++++++++++
-                  U_adj = U(:,I)
+                  Uface = U(:,I)
                   DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq
-                     U_adj(FIRST+1) = GRID_BC(FACE_PG)%UX
-                     U_adj(FIRST+2) = GRID_BC(FACE_PG)%UY
-                     U_adj(FIRST+3) = GRID_BC(FACE_PG)%TEMP
+                     Uface(FIRST+1) = GRID_BC(FACE_PG)%UX
+                     Uface(FIRST+2) = GRID_BC(FACE_PG)%UY
+                     Uface(FIRST+3) = GRID_BC(FACE_PG)%TEMP
                   END DO
-                  Uface = 0.5*(U(:,I) + U_adj)
                else
                   print*, "ERROR! UNKNOWN BOUNDARY TYPE ", neigh, " for element ", I, &
                   " Check the mesh or the pre-processing."
@@ -420,6 +419,8 @@ module pde
 
       INTEGER :: VERT
       REAL(KIND=8) :: XVERT, YVERT, DIST, XC, YC
+      REAL(KIND=8), DIMENSION(3) :: C1
+      REAL(KIND=8) :: THETA, Twall
 
       ! Compute gradient in each cell from nodal values
       gradU = 0.d0
@@ -474,9 +475,9 @@ module pde
                   DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq
-                     U_adj(FIRST+1) = GRID_BC(FACE_PG)%UX
-                     U_adj(FIRST+2) = GRID_BC(FACE_PG)%UY
-                     U_adj(FIRST+3) = GRID_BC(FACE_PG)%TEMP
+                     U_adj(FIRST+1) = 2.*GRID_BC(FACE_PG)%UX - U(FIRST+1,I)
+                     U_adj(FIRST+2) = 2.*GRID_BC(FACE_PG)%UY - U(FIRST+2,I)
+                     U_adj(FIRST+3) = 2.*GRID_BC(FACE_PG)%TEMP - U(FIRST+3,I)
                   END DO
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == SYMMETRY) then ! ++++++++ SYM BOUNDARY ++++++++++++++++++++
                   ONAXIS = .TRUE.
@@ -489,12 +490,16 @@ module pde
                   END DO
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) then ! ++++++++ KINETIC BOUNDARY ++++++++++++++++++++
                   U_adj = U(:,I)
+                  
+                  C1 = U2D_GRID%CELL_CENTROIDS(:,I)
+                  THETA = ATAN2(C1(2), C1(1))
+                  Twall = GRID_BC(FACE_PG)%TEMP + 200.d0*(SIN(THETA))**2
                   DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq
-                     U_adj(FIRST+1) = GRID_BC(FACE_PG)%UX
-                     U_adj(FIRST+2) = GRID_BC(FACE_PG)%UY
-                     U_adj(FIRST+3) = GRID_BC(FACE_PG)%TEMP
+                     U_adj(FIRST+1) = 2.*GRID_BC(FACE_PG)%UX - U(FIRST+1,I)
+                     U_adj(FIRST+2) = 2.*GRID_BC(FACE_PG)%UY - U(FIRST+2,I)
+                     U_adj(FIRST+3) = 2.*Twall - U(FIRST+3,I)
                   END DO
                else
                   print*, "ERROR! UNKNOWN BOUNDARY TYPE ", neigh, " for element ", I, &

@@ -522,17 +522,17 @@ module tools
       IF (.NOT. FILE_EXISTS) THEN
          HEADER_STRING = ''
          HEADER_STRING = TRIM(HEADER_STRING) // 'time'
-         DO JS = 1, N_SPECIES
+         DO JS = 1, N_SPECIES_FLUID
             HEADER_STRING = TRIM(HEADER_STRING) // ' mass_' // TRIM(SPECIES(JS)%NAME)
          END DO
          HEADER_STRING = TRIM(HEADER_STRING) // ' totmass'
-         DO JS = 1, N_SPECIES
+         DO JS = 1, N_SPECIES_FLUID
             HEADER_STRING = TRIM(HEADER_STRING) // ' xmom_' // TRIM(SPECIES(JS)%NAME) // ' ' &
                                           // 'ymom_' // TRIM(SPECIES(JS)%NAME) // ' ' &
                                           // 'zmom_' // TRIM(SPECIES(JS)%NAME)
          END DO
          HEADER_STRING = TRIM(HEADER_STRING) // ' totxmom totymom totzmom'
-         DO JS = 1, N_SPECIES
+         DO JS = 1, N_SPECIES_FLUID
             HEADER_STRING = TRIM(HEADER_STRING) // ' ene_' // TRIM(SPECIES(JS)%NAME)
          END DO
          HEADER_STRING = TRIM(HEADER_STRING) // ' totene'

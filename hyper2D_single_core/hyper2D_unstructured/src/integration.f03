@@ -30,6 +30,7 @@ module integration
       real(kind=8), dimension(:,:), ALLOCATABLE :: Uprim
       real(kind=8), dimension(:), ALLOCATABLE :: Uneigh
       real(kind=8), dimension(:,:,:), ALLOCATABLE :: gradUprim
+      REAL(KIND=8) :: THETA, Twall
 
       LOGICAL :: FLUIDBOUNDARY
 
@@ -122,8 +123,12 @@ module integration
                   call compute_moving_state(U(:,eleID), nx, ny, GRID_BC(FACE_PG)%TEMP, &
                   GRID_BC(FACE_PG)%UX, GRID_BC(FACE_PG)%UY, Uneigh)
                   gradUprim_neigh = gradUprim(:,:,eleID)
-               else if (GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) then ! ++++++++ MOVING BOUNDARY ++++++++++++++++++++
-                  call compute_moving_state(U(:,eleID), nx, ny, GRID_BC(FACE_PG)%TEMP, &
+               else if (GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) then ! ++++++++ KINETIC BOUNDARY ++++++++++++++++++++
+                  C1 = U2D_GRID%CELL_CENTROIDS(:,eleID)
+                  THETA = ATAN2(C1(2), C1(1))
+                  Twall = GRID_BC(FACE_PG)%TEMP + 200.d0*(SIN(THETA))**2
+
+                  call compute_moving_state(U(:,eleID), nx, ny, Twall, &
                   GRID_BC(FACE_PG)%UX, GRID_BC(FACE_PG)%UY, Uneigh)
                   !Uneigh = U(:,eleID)
                   gradUprim_neigh = gradUprim(:,:,eleID)
@@ -172,7 +177,7 @@ module integration
                F_dot_n_hyper = 0.d0
                !F_dot_n_diff = 0.d0
 
-               CALL compute_kinetic_wall_fluxes(U(:,eleID), nx, ny, GRID_BC(FACE_PG)%TEMP, &
+               CALL compute_kinetic_wall_fluxes(U(:,eleID), nx, ny, Twall, &
                GRID_BC(FACE_PG)%UX, GRID_BC(FACE_PG)%UY, GRID_BC(FACE_PG)%REACT, F_dot_n_wall)
 
             END IF
@@ -411,6 +416,16 @@ module integration
       END IF
 
 
+      IF (.FALSE.) THEN
+         DO I = 1, N_SPECIES_FLUID
+            RHOI  = (I-1)*Neq+1
+            MOMYI = (I-1)*Neq+3
+            ENEI  = (I-1)*Neq+4
+
+            S(MOMYI) = S(MOMYI) - 9.81*prim(RHOI)
+            S(ENEI) = S(ENEI) - 9.81*prim(RHOI)*prim(MOMYI)
+         END DO
+      END IF
 
 
       IF (AXI) THEN
@@ -940,9 +955,9 @@ module integration
       Pu = -Ku*fa*betaLP*betaRM*2.0*rhoface*aface*(unR-unL)
 
 
-      Mface = MLP + MRM + MP
+      Mface = MLP + MRM !+ MP
 
-      pflux = betaLP*pL + betaRM*pR + Pu
+      pflux = betaLP*pL + betaRM*pR !+ Pu
 
 
       !------------------------
@@ -1097,6 +1112,28 @@ module integration
 
       
    end subroutine
+
+
+   subroutine compute_transport_simple(U)
+
+      implicit none
+
+      real(kind=8), dimension(:,:), intent(in)  :: U
+      INTEGER :: eleID, IS, JS
+
+      DO eleID = 1, NCELLS
+
+         DO IS = 1, N_SPECIES_FLUID
+            MU_GRID(IS, eleID) = SPECIES(IS)%MU
+            DO JS = 1, N_SPECIES_FLUID
+               KAPPA_GRID(IS, JS, eleID) = SPECIES(IS)%KAPPA
+            END DO
+         END DO
+
+      END DO
+
+   end subroutine
+
 
 
    subroutine compute_transport(U)
