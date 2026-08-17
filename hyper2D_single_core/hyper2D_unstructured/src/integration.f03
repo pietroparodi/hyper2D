@@ -171,15 +171,15 @@ module integration
             gradUprim(:,:,eleID), gradUprim_neigh, &
             nx, ny, F_dot_n_diff(:), Acell, dLR, eleID, neigh)
 
-            IF (FLUIDBOUNDARY .AND. GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) THEN ! +++++++++ KINETIC FLUX AT THE WALL
+            IF (FLUIDBOUNDARY) THEN
                FACE_PG = U2D_GRID%CELL_EDGES_PG(intID,eleID)
+               IF (GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) THEN ! +++++++++ KINETIC FLUX AT THE WALL
+                  F_dot_n_hyper = 0.d0
+                  !F_dot_n_diff = 0.d0
 
-               F_dot_n_hyper = 0.d0
-               !F_dot_n_diff = 0.d0
-
-               CALL compute_kinetic_wall_fluxes(U(:,eleID), nx, ny, Twall, &
-               GRID_BC(FACE_PG)%UX, GRID_BC(FACE_PG)%UY, GRID_BC(FACE_PG)%REACT, F_dot_n_wall)
-
+                  CALL compute_kinetic_wall_fluxes(U(:,eleID), nx, ny, Twall, &
+                  GRID_BC(FACE_PG)%UX, GRID_BC(FACE_PG)%UY, GRID_BC(FACE_PG)%REACT, F_dot_n_wall)
+               END IF
             END IF
             
             !WRITE(*,*) F_dot_n_hyper
@@ -1146,6 +1146,13 @@ module integration
       INTEGER :: eleID
 
       DO eleID = 1, NCELLS
+
+         ! Skip cells that are not fluid
+         IF (U2D_GRID%CELL_PG(eleID) .NE. -1) THEN
+            IF (GRID_BC(U2D_GRID%CELL_PG(eleID))%VOLUME_BC == SOLID) CYCLE
+         END IF
+
+
          call compute_primitive_from_conserved(U(1:4, eleID), primI2, 1)
          call compute_primitive_from_conserved(U(5:8, eleID), primI, 2)
 
