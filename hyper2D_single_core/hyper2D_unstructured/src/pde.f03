@@ -493,7 +493,7 @@ module pde
                   
                   C1 = U2D_GRID%CELL_CENTROIDS(:,I)
                   THETA = ATAN2(C1(2), C1(1))
-                  Twall = GRID_BC(FACE_PG)%TEMP + 200.d0*(SIN(THETA))**2
+                  Twall = GRID_BC(FACE_PG)%TEMP !+ 200.d0*(SIN(THETA))**2
                   DO SP_ID = 1, N_SPECIES_FLUID
                      FIRST = (SP_ID-1)*Neq+1
                      LAST = SP_ID*Neq

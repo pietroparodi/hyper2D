@@ -126,7 +126,7 @@ module integration
                else if (GRID_BC(FACE_PG)%PARTICLE_BC == KINETIC) then ! ++++++++ KINETIC BOUNDARY ++++++++++++++++++++
                   C1 = U2D_GRID%CELL_CENTROIDS(:,eleID)
                   THETA = ATAN2(C1(2), C1(1))
-                  Twall = GRID_BC(FACE_PG)%TEMP + 200.d0*(SIN(THETA))**2
+                  Twall = GRID_BC(FACE_PG)%TEMP !+ 200.d0*(SIN(THETA))**2
 
                   call compute_moving_state(U(:,eleID), nx, ny, Twall, &
                   GRID_BC(FACE_PG)%UX, GRID_BC(FACE_PG)%UY, Uneigh)
